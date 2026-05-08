@@ -136,7 +136,7 @@ router.post('/register', authLimiter, async (req, res) => {
     req.session.username = newUser.username;
     req.session.isAdmin = newUser.is_admin;
     imapManager.connectAllForUser(newUser.id);
-    res.json({ user: { id: newUser.id, username: newUser.username, isAdmin: newUser.is_admin } });
+    res.json({ user: { id: newUser.id, username: newUser.username, displayName: null, avatar: null, isAdmin: newUser.is_admin, totpEnabled: false } });
   } catch (err) {
     await client.query('ROLLBACK').catch(rbErr => console.error('Registration ROLLBACK error:', rbErr.message));
     if (err.code === '23505') return res.status(409).json({ error: 'Username already taken' });
@@ -179,7 +179,7 @@ router.post('/login', authLimiter, async (req, res) => {
     // Start IMAP connections for this user
     imapManager.connectAllForUser(user.id);
 
-    res.json({ user: { id: user.id, username: user.username, isAdmin: user.is_admin } });
+    res.json({ user: { id: user.id, username: user.username, displayName: user.display_name, avatar: user.avatar, isAdmin: user.is_admin, totpEnabled: user.totp_enabled } });
   } catch (err) {
     res.status(500).json({ error: 'Login failed' });
   }
@@ -231,7 +231,7 @@ router.post('/2fa/challenge', authLimiter, async (req, res) => {
   req.session.isAdmin = user.is_admin;
 
   imapManager.connectAllForUser(user.id);
-  res.json({ user: { id: user.id, username: user.username, isAdmin: user.is_admin } });
+  res.json({ user: { id: user.id, username: user.username, displayName: user.display_name, avatar: user.avatar, isAdmin: user.is_admin, totpEnabled: user.totp_enabled } });
 });
 
 router.post('/logout', (req, res) => {
