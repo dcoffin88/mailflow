@@ -1098,7 +1098,7 @@ export default function MessageList() {
           borderBottom: '1px solid var(--border-subtle)',
           boxShadow: listScrolled ? '0 1px 10px rgba(0,0,0,0.2)' : 'none',
           transition: 'box-shadow 0.2s ease',
-          background: 'var(--accent-glow)', flexShrink: 0,
+          background: 'var(--bg-secondary)', flexShrink: 0,
         }}>
           {/* Hamburger */}
           <button
@@ -1363,7 +1363,7 @@ export default function MessageList() {
           {searchFocused && !searchQuery && (
             <div style={{
               position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0, zIndex: 100,
-              background: 'var(--bg-elevated, var(--accent-glow))',
+              background: 'var(--bg-elevated, var(--bg-secondary))',
               border: '1px solid var(--border)',
               borderRadius: 8,
               boxShadow: '0 6px 20px rgba(0,0,0,0.25)',
@@ -1658,7 +1658,7 @@ export default function MessageList() {
                   <div style={{
                     position: 'fixed', left: 0, right: 0, bottom: 0,
                     zIndex: 3001,
-                    background: 'var(--accent-glow)',
+                    background: 'var(--bg-secondary)',
                     borderRadius: '16px 16px 0 0',
                     boxShadow: '0 -4px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.04)',
                     paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)',
@@ -1987,7 +1987,7 @@ function EmptyState({ folderSyncing, searchQuery, unreadOnly, selectedFolder, ac
       <div style={{ padding: '60px 24px', textAlign: 'center' }}>
         <div style={{
           width: 48, height: 48, borderRadius: 14, margin: '0 auto 16px',
-          background: 'var(--accent-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: 'var(--text-tertiary)',
         }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -2011,7 +2011,7 @@ function EmptyState({ folderSyncing, searchQuery, unreadOnly, selectedFolder, ac
       <div style={{ padding: '60px 24px', textAlign: 'center' }}>
         <div style={{
           width: 48, height: 48, borderRadius: 14, margin: '0 auto 16px',
-          background: 'var(--accent-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: 'var(--accent)',
         }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -2033,7 +2033,7 @@ function EmptyState({ folderSyncing, searchQuery, unreadOnly, selectedFolder, ac
       <div style={{ padding: '60px 24px', textAlign: 'center' }}>
         <div style={{
           width: 48, height: 48, borderRadius: 14, margin: '0 auto 16px',
-          background: 'var(--accent-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
           color: 'var(--text-tertiary)',
         }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -2052,7 +2052,7 @@ function EmptyState({ folderSyncing, searchQuery, unreadOnly, selectedFolder, ac
     <div style={{ padding: '60px 24px', textAlign: 'center' }}>
       <div style={{
         width: 48, height: 48, borderRadius: 14, margin: '0 auto 16px',
-        background: 'var(--accent-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
         color: 'var(--text-tertiary)',
       }}>
         {isInbox ? (
