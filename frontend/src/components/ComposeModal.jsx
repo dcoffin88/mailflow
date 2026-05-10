@@ -712,7 +712,7 @@ export default function ComposeModal() {
         boxShadow: 'var(--shadow-modal)',
         zIndex: 1000, display: 'flex', flexDirection: 'column',
         maxHeight: '75vh',
-        animation: 'compose-enter var(--motion-normal) var(--ease-emphasized) both',
+        animation: 'compose-enter var(--motion-normal) var(--ease-emphasized) backwards',
       }}
     >
       {/* Title bar */}
@@ -1078,7 +1078,7 @@ function RichToolbar({ editor }) {
       bulletList: ed.isActive('bulletList'),
       orderedList: ed.isActive('orderedList'),
       link: ed.isActive('link'),
-      alignLeft: ed.isActive({ textAlign: 'left' }),
+      alignLeft: ed.isActive({ textAlign: 'left' }) || !ed.isActive({ textAlign: 'center' }) && !ed.isActive({ textAlign: 'right' }) && !ed.isActive({ textAlign: 'justify' }),
       alignCenter: ed.isActive({ textAlign: 'center' }),
       alignRight: ed.isActive({ textAlign: 'right' }),
       color: ed.getAttributes('textStyle').color,
@@ -1099,8 +1099,13 @@ function RichToolbar({ editor }) {
     e.preventDefault();
     if (emojiPos) { setEmojiPos(null); return; }
     const r = emojiBtnRef.current.getBoundingClientRect();
-    // open upward so it doesn't go off-screen at the bottom
-    setEmojiPos({ bottom: window.innerHeight - r.top + 4, left: Math.min(r.left, window.innerWidth - 360) });
+    const left = Math.max(4, Math.min(r.left, window.innerWidth - 360));
+    const spaceBelow = window.innerHeight - r.bottom;
+    const spaceAbove = r.top;
+    const pos = spaceBelow >= 420 || spaceBelow >= spaceAbove
+      ? { top: r.bottom + 4, left }
+      : { bottom: window.innerHeight - r.top + 4, left };
+    setEmojiPos(pos);
     setColorPos(null); setLinkPos(null);
   };
   const openLink = (e) => {
@@ -1242,7 +1247,7 @@ function RichToolbar({ editor }) {
       )}
 
       {emojiPos && (
-        <div ref={emojiPopRef} style={{ position: 'fixed', bottom: emojiPos.bottom, left: emojiPos.left, zIndex: 9900 }}>
+        <div ref={emojiPopRef} style={{ position: 'fixed', top: emojiPos.top, bottom: emojiPos.bottom, left: emojiPos.left, zIndex: 9900 }}>
           <Picker data={emojiData} onEmojiSelect={emoji => { editor.chain().focus().insertContent(emoji.native).run(); setEmojiPos(null); }}
             theme="auto" previewPosition="none" skinTonePosition="none"
             perLine={8} emojiSize={20} emojiButtonSize={28} maxFrequentRows={2} />
