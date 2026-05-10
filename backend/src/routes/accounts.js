@@ -27,7 +27,7 @@ router.use(requireAuth);
 
 // Fields safe to return to the client — matches the GET list, excludes credentials and tokens
 const SAFE_FIELDS = [
-  'id', 'name', 'email_address', 'color', 'protocol',
+  'id', 'name', 'sender_name', 'email_address', 'color', 'protocol',
   'imap_host', 'imap_port', 'smtp_host', 'smtp_port',
   'auth_user', 'oauth_provider', 'enabled',
   'last_sync', 'sync_error', 'sort_order', 'folder_mappings',
@@ -42,7 +42,7 @@ function safeAccount(row) {
 
 router.get('/', async (req, res) => {
   const result = await query(
-    `SELECT id, name, email_address, color, protocol, imap_host, imap_port,
+    `SELECT id, name, sender_name, email_address, color, protocol, imap_host, imap_port,
             smtp_host, smtp_port, auth_user, oauth_provider, enabled,
             last_sync, sync_error, sort_order, folder_mappings, imap_skip_tls_verify, signature, created_at
      FROM email_accounts WHERE user_id = $1 ORDER BY sort_order, created_at`,
@@ -76,7 +76,7 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   const {
-    name, email_address, color = '#6366f1', protocol = 'imap',
+    name, sender_name = null, email_address, color = '#6366f1', protocol = 'imap',
     imap_host, imap_port = 993, imap_tls = true,
     smtp_host, smtp_port = 587, smtp_tls = 'STARTTLS',
     auth_user, auth_pass,
@@ -87,6 +87,9 @@ router.post('/', async (req, res) => {
   if (!name || !email_address) return res.status(400).json({ error: 'Name and email required' });
   if (hasHeaderInjectionChars(name) || hasHeaderInjectionChars(email_address)) {
     return res.status(400).json({ error: 'Name and email address cannot contain control characters' });
+  }
+  if (sender_name && hasHeaderInjectionChars(sender_name)) {
+    return res.status(400).json({ error: 'Sender name cannot contain control characters' });
   }
 
   if (imap_host) {
@@ -101,14 +104,14 @@ router.post('/', async (req, res) => {
   try {
     const result = await query(`
       INSERT INTO email_accounts (
-        user_id, name, email_address, color, protocol,
+        user_id, name, sender_name, email_address, color, protocol,
         imap_host, imap_port, imap_tls, smtp_host, smtp_port, smtp_tls,
         auth_user, auth_pass, oauth_provider, oauth_access_token, oauth_refresh_token,
         signature
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
       RETURNING *
     `, [
-      req.session.userId, name, email_address, color, protocol,
+      req.session.userId, name, sender_name || null, email_address, color, protocol,
       imap_host, imap_port, imap_tls, smtp_host, smtp_port, smtp_tls,
       auth_user, encrypt(auth_pass), oauth_provider, encrypt(oauth_access_token), encrypt(oauth_refresh_token),
       sanitizeSignature(signature) || null
@@ -136,6 +139,12 @@ router.put('/:id', async (req, res) => {
   const check = await query('SELECT id FROM email_accounts WHERE id = $1 AND user_id = $2', [id, req.session.userId]);
   if (!check.rows.length) return res.status(404).json({ error: 'Account not found' });
 
+  if ('name' in updates && hasHeaderInjectionChars(updates.name)) {
+    return res.status(400).json({ error: 'Name cannot contain control characters' });
+  }
+  if ('sender_name' in updates && updates.sender_name && hasHeaderInjectionChars(updates.sender_name)) {
+    return res.status(400).json({ error: 'Sender name cannot contain control characters' });
+  }
   if ('smtp_host' in updates && updates.smtp_host) {
     const err = await validateHost(updates.smtp_host);
     if (err) return res.status(400).json({ error: `SMTP: ${err}` });
@@ -145,7 +154,7 @@ router.put('/:id', async (req, res) => {
     if (err) return res.status(400).json({ error: `SMTP: ${err}` });
   }
 
-  const allowed = ['name', 'color', 'enabled', 'auth_user', 'auth_pass', 'sort_order', 'smtp_host', 'smtp_port', 'folder_mappings', 'imap_skip_tls_verify', 'signature'];
+  const allowed = ['name', 'sender_name', 'color', 'enabled', 'auth_user', 'auth_pass', 'sort_order', 'smtp_host', 'smtp_port', 'folder_mappings', 'imap_skip_tls_verify', 'signature'];
   const sets = [];
   const values = [];
   let i = 1;

@@ -325,6 +325,8 @@
       "color": "Account color",
       "displayName": "Display name",
       "displayNamePh": "e.g. Work Gmail",
+      "senderName": "Sender name",
+      "senderNamePh": "e.g. Alice Smith",
       "email": "Email address",
       "emailPh": "you@example.com",
       "authUser": "Username (IMAP login)",

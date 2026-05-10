@@ -97,7 +97,7 @@ router.post('/send', async (req, res) => {
   let account = result.rows[0];
 
   // Resolve the From identity — account by default, alias if requested
-  let fromName = account.name;
+  let fromName = account.sender_name || account.name;
   let fromEmail = account.email_address;
   let fromSignature = account.signature;
   let fromReplyTo = null;

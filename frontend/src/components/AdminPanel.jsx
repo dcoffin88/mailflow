@@ -131,6 +131,13 @@ function AccountForm({ initial, onSave, onCancel }) {
           onBlur={e => e.target.style.borderColor = 'var(--border)'} />
       </Field>
 
+      <Field label={t('admin.accounts.senderName')}>
+        <input value={form.sender_name || ''} onChange={e => set('sender_name', e.target.value)}
+          placeholder={t('admin.accounts.senderNamePh')} style={inputStyle}
+          onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+          onBlur={e => e.target.style.borderColor = 'var(--border)'} />
+      </Field>
+
       {!isEdit && (
         <Field label={t('admin.accounts.email')} required>
           <input value={form.email_address || ''} onChange={e => set('email_address', e.target.value)}
@@ -276,7 +283,7 @@ function AccountsTab() {
   };
 
   const handleEdit = async (form) => {
-    const updates = { name: form.name, color: form.color, smtp_host: form.smtp_host, smtp_port: form.smtp_port, signature: form.signature || null };
+    const updates = { name: form.name, sender_name: form.sender_name || null, color: form.color, smtp_host: form.smtp_host, smtp_port: form.smtp_port, signature: form.signature || null };
     if (form.auth_pass) updates.auth_pass = form.auth_pass;
     if (form.auth_user) updates.auth_user = form.auth_user;
     await api.updateAccount(editTarget.id, updates);
