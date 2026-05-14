@@ -1,3 +1,10 @@
+-- Ensure thread-related columns exist before this migration references them.
+-- On installs that pre-date the threading feature (Apr 30 2026), the baseline
+-- CREATE TABLE IF NOT EXISTS was a no-op and these columns were never added.
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS in_reply_to TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS thread_references TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS thread_id TEXT;
+
 -- Add normalized_subject as a generated column for subject-based thread fallback.
 -- Strips up to 3 levels of common reply/forward prefixes (Re:, FW:, AW:, etc.)
 -- and lowercases the result. Used by computeThreadId when RFC 5322 In-Reply-To /

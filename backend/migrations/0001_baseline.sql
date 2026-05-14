@@ -203,3 +203,26 @@ CREATE TABLE IF NOT EXISTS snoozed_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_snoozed_messages_until ON snoozed_messages(snooze_until);
 CREATE INDEX IF NOT EXISTS idx_snoozed_messages_account ON snoozed_messages(account_id);
+
+-- Idempotent guards for columns the old initDb() added incrementally.
+-- Brings any pre-existing schema up to the full baseline before 0002+ runs.
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name VARCHAR(100);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;
+ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS folder_mappings JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS imap_skip_tls_verify BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE email_accounts ADD COLUMN IF NOT EXISTS signature TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to JSONB DEFAULT '[]';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS in_reply_to TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS thread_references TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS thread_id TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_changed_at TIMESTAMPTZ;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS star_changed_at TIMESTAMPTZ;
+ALTER TABLE folders ADD COLUMN IF NOT EXISTS uid_validity BIGINT;
+ALTER TABLE integration_config ALTER COLUMN user_id DROP NOT NULL;
+ALTER TABLE integration_config DROP CONSTRAINT IF EXISTS integration_config_user_id_provider_key;
+ALTER TABLE oidc_providers ADD COLUMN IF NOT EXISTS require_email_verified BOOLEAN NOT NULL DEFAULT true;
