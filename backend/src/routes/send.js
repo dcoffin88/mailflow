@@ -8,6 +8,9 @@ import { decrypt } from '../services/encryption.js';
 import sanitizeHtml from 'sanitize-html';
 import { redactEmail } from '../utils/redact.js';
 import { resolveForConnection } from '../services/hostValidation.js';
+import { imapManager } from '../index.js';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -88,7 +91,7 @@ router.use(requireAuth);
 
 
 router.post('/send', async (req, res) => {
-  const { accountId, aliasId, to, cc = [], bcc = [], subject, body, bodyIsHtml = false, quotedBody, quotedBodyHtml, inReplyTo, references, attachments } = req.body;
+  const { accountId, aliasId, to, cc = [], bcc = [], subject, body, bodyIsHtml = false, quotedBody, quotedBodyHtml, inReplyTo, references, attachments, editedSignature, forwardedAttachments } = req.body;
   if (!accountId || !to?.length) return res.status(400).json({ error: 'accountId and to required' });
 
   if (attachments !== undefined) {
@@ -98,6 +101,14 @@ router.post('/send', async (req, res) => {
     for (const [i, a] of attachments.entries()) {
       if (typeof a.filename !== 'string' || !a.filename.trim()) return res.status(400).json({ error: `attachments[${i}].filename is required` });
       if (typeof a.content !== 'string') return res.status(400).json({ error: `attachments[${i}].content must be a base64 string` });
+    }
+  }
+
+  if (forwardedAttachments !== undefined) {
+    if (!Array.isArray(forwardedAttachments)) return res.status(400).json({ error: 'forwardedAttachments must be an array' });
+    for (const [i, fa] of forwardedAttachments.entries()) {
+      if (typeof fa.messageId !== 'string' || !UUID_RE.test(fa.messageId)) return res.status(400).json({ error: `forwardedAttachments[${i}].messageId is invalid` });
+      if (typeof fa.part !== 'string' || !fa.part.trim()) return res.status(400).json({ error: `forwardedAttachments[${i}].part is required` });
     }
   }
 
@@ -137,6 +148,56 @@ router.post('/send', async (req, res) => {
       fromReplyTo = alias.reply_to || null;
       // null (DB default) means inherit from account; only override when alias has an explicit signature set
       if (alias.signature !== null) fromSignature = alias.signature;
+    }
+  }
+
+  // Allow the client to override the signature per-send (editedSignature === undefined means use DB value)
+  const effectiveSignature = editedSignature !== undefined ? (editedSignature || null) : fromSignature;
+
+  // Fetch forwarded attachment content from IMAP before entering the SMTP try-block so that
+  // attachment errors return descriptive messages rather than being sanitized as SMTP errors.
+  let resolvedFwdAttachments = [];
+  if (forwardedAttachments?.length) {
+    try {
+      resolvedFwdAttachments = await Promise.all(forwardedAttachments.map(async (fa) => {
+        const msgResult = await query(
+          `SELECT m.uid, m.folder, m.attachments, m.account_id FROM messages m
+           JOIN email_accounts a ON m.account_id = a.id
+           WHERE m.id = $1 AND a.user_id = $2`,
+          [fa.messageId, req.session.userId]
+        );
+        if (!msgResult.rows.length) throw Object.assign(new Error('Forwarded message not found'), { status: 404 });
+        const msg = msgResult.rows[0];
+
+        const storedAtts = typeof msg.attachments === 'string'
+          ? JSON.parse(msg.attachments || '[]')
+          : (msg.attachments || []);
+        const att = storedAtts.find(a => a.part === fa.part);
+        if (!att) throw Object.assign(new Error('Attachment not found in message'), { status: 404 });
+
+        const accResult = await query('SELECT * FROM email_accounts WHERE id = $1', [msg.account_id]);
+        if (!accResult.rows.length) throw Object.assign(new Error('Account not found'), { status: 404 });
+
+        const buffer = await imapManager.fetchAttachment(accResult.rows[0], msg.uid, msg.folder, fa.part);
+        if (!buffer) throw Object.assign(new Error(`Could not fetch attachment: ${att.filename}`), { status: 502 });
+
+        return {
+          filename: sanitizeHeaderValue(att.filename || 'attachment'),
+          content: buffer,
+          contentType: att.type || 'application/octet-stream',
+        };
+      }));
+
+      // Combined size check: user uploads + forwarded content
+      const uploadedBytes = (attachments || []).reduce(
+        (sum, a) => sum + (typeof a.content === 'string' ? Math.ceil(a.content.length * 0.75) : 0), 0
+      );
+      const fwdBytes = resolvedFwdAttachments.reduce((sum, a) => sum + (a.content?.length || 0), 0);
+      if (uploadedBytes + fwdBytes > 26_214_400) {
+        return res.status(400).json({ error: 'Total attachment size exceeds 25 MB' });
+      }
+    } catch (err) {
+      return res.status(err.status || 500).json({ error: err.message || 'Failed to fetch forwarded attachments' });
     }
   }
 
@@ -186,13 +247,13 @@ router.post('/send', async (req, res) => {
       cc: normalizedCc.join(', ') || undefined,
       bcc: normalizedBcc.join(', ') || undefined,
       subject: normalizedSubject,
-      text: fromSignature
-        ? bodyToPlain(body, bodyIsHtml) + '\n\n-- \n' + sigToPlainText(fromSignature) + (quotedBody || '')
+      text: effectiveSignature
+        ? bodyToPlain(body, bodyIsHtml) + '\n\n-- \n' + sigToPlainText(effectiveSignature) + (quotedBody || '')
         : bodyToPlain(body, bodyIsHtml) + (quotedBody || ''),
       ...(plaintextEmail ? {} : {
         html: bodyToHtml(body, bodyIsHtml) +
-          (fromSignature
-            ? '<div style="margin-top:16px;color:#555;font-size:13px">' + fromSignature + '</div>'
+          (effectiveSignature
+            ? '<div style="margin-top:16px;color:#555;font-size:13px">' + effectiveSignature + '</div>'
             : '') +
           (quotedBodyHtml || (quotedBody ? textToHtml(quotedBody) : '')),
       }),
@@ -202,12 +263,16 @@ router.post('/send', async (req, res) => {
       // Use the full prior references chain if available; fall back to just inReplyTo.
       mailOptions.references = sanitizeHeaderValue(references || inReplyTo);
     }
-    if (attachments?.length) {
-      mailOptions.attachments = attachments.map(a => ({
+    const allAttachments = [
+      ...(attachments?.length ? attachments.map(a => ({
         filename: sanitizeHeaderValue(a.filename),
         content: Buffer.from(a.content, 'base64'),
         contentType: typeof a.contentType === 'string' ? a.contentType : 'application/octet-stream',
-      }));
+      })) : []),
+      ...resolvedFwdAttachments,
+    ];
+    if (allAttachments.length) {
+      mailOptions.attachments = allAttachments;
     }
 
     // OAuth providers (Gmail, Microsoft) save sent mail to IMAP automatically via their

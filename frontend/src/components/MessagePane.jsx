@@ -6,6 +6,13 @@ import { format } from 'date-fns';
 import { shortcutBus } from '../utils/shortcutBus.js';
 import { useMobile } from '../hooks/useMobile.js';
 
+function parseAddressField(raw) {
+  try {
+    const arr = Array.isArray(raw) ? raw : JSON.parse(raw || '[]');
+    return arr.map(a => a.name ? `${a.name} <${a.email}>` : a.email).filter(Boolean).join(', ');
+  } catch (_) { return ''; }
+}
+
 function linkifyText(text) {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return escaped.replace(
@@ -473,9 +480,13 @@ export default function MessagePane() {
       ? `${safeName} <${message.from_email}>`
       : message.from_email || '';
     const safeSubject = (message.subject || '').replace(/[\r\n]+/g, ' ');
-    const fwdText = `\n\n---------- Forwarded message ----------\nFrom: ${fromStr}\nDate: ${date}\nSubject: ${safeSubject}\n\n${body?.text || ''}`;
+
+    const toStr = parseAddressField(message.to_addresses);
+    const ccStr = parseAddressField(message.cc_addresses);
+
+    const fwdText = `\n\n---------- Forwarded message ----------\nFrom: ${fromStr}\nDate: ${date}\nSubject: ${safeSubject}${toStr ? `\nTo: ${toStr}` : ''}${ccStr ? `\nCc: ${ccStr}` : ''}\n\n${body?.text || ''}`;
     const fwdHtml = body?.html
-      ? `<div style="border-left:3px solid var(--border,#ccc);padding-left:12px;margin-top:12px;color:var(--text-secondary,#666)"><p style="margin:0 0 6px;font-size:12px">---------- Forwarded message ----------<br>From: ${fromStr}<br>Date: ${date}<br>Subject: ${safeSubject}</p>${body.html}</div>`
+      ? `<div style="border-left:3px solid var(--border,#ccc);padding-left:12px;margin-top:12px;color:var(--text-secondary,#666)"><p style="margin:0 0 6px;font-size:12px">---------- Forwarded message ----------<br>From: ${fromStr}<br>Date: ${date}<br>Subject: ${safeSubject}${toStr ? `<br>To: ${toStr}` : ''}${ccStr ? `<br>Cc: ${ccStr}` : ''}</p>${body.html}</div>`
       : null;
     openCompose({
       subject: message.subject?.startsWith('Fwd:') ? message.subject : `Fwd: ${message.subject}`,
@@ -484,6 +495,13 @@ export default function MessagePane() {
       quotedBodyHtml: fwdHtml,
       accountId: message.account_id,
       isForward: true,
+      forwardedAttachments: (body?.attachments || []).map(att => ({
+        messageId: message.id,
+        part: att.part,
+        filename: att.filename || 'attachment',
+        type: att.type || 'application/octet-stream',
+        size: att.size || 0,
+      })),
     });
   };
 

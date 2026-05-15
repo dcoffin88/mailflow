@@ -37,6 +37,12 @@ function resizeImageToDataUrl(file, maxW = 800) {
   });
 }
 
+function stripHtml(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  return div.textContent || div.innerText || '';
+}
+
 // Normalize address arrays to comma-separated string
 // Handles: plain strings, {email} objects, {name, email} objects
 function normalizeTo(arr) {
@@ -105,6 +111,7 @@ export default function ComposeModal() {
   const [quotedBodyHtml] = useState(() => composeData?.quotedBodyHtml || null);
   const [showDiscardSheet, setShowDiscardSheet] = useState(false);
   const [attachments, setAttachments] = useState([]);
+  const [fwdAttachments, setFwdAttachments] = useState(() => composeData?.forwardedAttachments || []);
 
   // Baseline values captured at open time — used to detect unsaved changes
   const initialBodyRef = useRef(composeData?.body || '');
@@ -169,6 +176,15 @@ export default function ComposeModal() {
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
   const imageInputRef = useRef(null);
+  const signatureRef = useRef(null);
+  const quotedHtmlRef = useRef(null);
+
+  const [plainSig, setPlainSig] = useState(() => fromSignature ? stripHtml(fromSignature) : '');
+  // Tracks the user's current (possibly edited) rich-text signature; kept current by onInput.
+  const signatureContentRef = useRef('');
+  // Prevents the signature from being reset by a store refresh (same fromValue, accounts updated).
+  const signatureInitializedRef = useRef(false);
+  const prevFromValueRef = useRef(fromValue);
 
   const editor = useEditor({
     extensions: [
@@ -281,6 +297,35 @@ export default function ComposeModal() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showReplyType]);
 
+  // Initialise/reset the signature when the From identity changes, or when the
+  // signature first becomes available (accounts loaded after component mount).
+  // Does NOT reset on plain accounts-data refreshes (same fromValue, new array
+  // reference) so that user edits survive background IMAP sync re-renders.
+  useEffect(() => {
+    const fromValueChanged = fromValue !== prevFromValueRef.current;
+    if (fromValueChanged) {
+      prevFromValueRef.current = fromValue;
+      signatureInitializedRef.current = false;
+    }
+    if (!signatureInitializedRef.current && fromSignature != null) {
+      signatureInitializedRef.current = true;
+      const sanitized = DOMPurify.sanitize(fromSignature);
+      if (signatureRef.current) signatureRef.current.innerHTML = sanitized;
+      signatureContentRef.current = sanitized;
+      setPlainSig(stripHtml(fromSignature));
+    } else if (fromValueChanged && fromSignature == null) {
+      signatureContentRef.current = '';
+      setPlainSig('');
+    }
+  }, [fromValue, fromSignature]);
+
+  // Initialise quoted HTML contentEditable once on mount (ref-based to avoid React cursor conflicts)
+  useEffect(() => {
+    if (quotedHtmlRef.current && quotedBodyHtml) {
+      quotedHtmlRef.current.innerHTML = DOMPurify.sanitize(quotedBodyHtml);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -323,7 +368,12 @@ export default function ComposeModal() {
         body: bodyToSend,
         bodyIsHtml: !plaintextEmail,
         ...(quotedBody ? { quotedBody } : {}),
-        ...(!plaintextEmail && quotedBodyHtml ? { quotedBodyHtml } : {}),
+        ...(!plaintextEmail && (quotedBodyHtml != null || quotedHtmlRef.current)
+          ? { quotedBodyHtml: quotedHtmlRef.current ? quotedHtmlRef.current.innerHTML : quotedBodyHtml }
+          : {}),
+        ...(signatureContentRef.current || fromSignature != null
+          ? { editedSignature: plaintextEmail ? plainSig : signatureContentRef.current }
+          : {}),
         inReplyTo: composeData?.inReplyTo,
         references: composeData?.references || undefined,
         ...(attachments.length ? {
@@ -333,6 +383,9 @@ export default function ComposeModal() {
             encoding: 'base64',
             contentType: a.type || 'application/octet-stream',
           })),
+        } : {}),
+        ...(fwdAttachments.length ? {
+          forwardedAttachments: fwdAttachments.map(a => ({ messageId: a.messageId, part: a.part })),
         } : {}),
       });
       closeCompose();
@@ -348,6 +401,26 @@ export default function ComposeModal() {
       setSending(false);
     }
   };
+
+  const renderSignatureEditor = () => plaintextEmail ? (
+    <textarea
+      value={plainSig}
+      onChange={e => setPlainSig(e.target.value)}
+      style={{
+        width: '100%', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6,
+        background: 'transparent', border: 'none', outline: 'none', resize: 'none',
+        fontFamily: 'var(--font-sans, DM Sans, sans-serif)', boxSizing: 'border-box',
+      }}
+    />
+  ) : (
+    <div
+      ref={signatureRef}
+      contentEditable
+      suppressContentEditableWarning
+      onInput={() => { signatureContentRef.current = signatureRef.current?.innerHTML || ''; }}
+      style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, outline: 'none' }}
+    />
+  );
 
   const modeLabel = isReply
     ? (replyAll ? t('compose.replyAll') : t('compose.reply'))
@@ -679,17 +752,23 @@ export default function ComposeModal() {
               <div style={{ fontSize: 11, color: 'var(--text-tertiary)', margin: '8px 0 6px', userSelect: 'none' }}>
                 -- signature
               </div>
-              <div
-                style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}
-                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(fromSignature) }}
-              />
+              {renderSignatureEditor()}
             </div>
           )}
 
           {/* Quoted body */}
           {(quotedBody || quotedBodyHtml) && (
             !plaintextEmail && quotedBodyHtml ? (
-              <QuotedEmailFrame html={quotedBodyHtml} mobile />
+              <div
+                ref={quotedHtmlRef}
+                contentEditable
+                suppressContentEditableWarning
+                style={{
+                  padding: '10px 16px', borderTop: '1px solid var(--border-subtle)',
+                  color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6,
+                  outline: 'none', minHeight: 80, overflowY: 'auto',
+                }}
+              />
             ) : (
               <textarea
                 value={quotedBody}
@@ -708,6 +787,9 @@ export default function ComposeModal() {
             )
           )}
 
+          {fwdAttachments.length > 0 && (
+            <AttachmentChips attachments={fwdAttachments.map(a => ({ name: a.filename, size: a.size }))} onRemove={i => setFwdAttachments(prev => prev.filter((_, j) => j !== i))} mobile />
+          )}
           {attachments.length > 0 && (
             <AttachmentChips attachments={attachments} onRemove={i => setAttachments(prev => prev.filter((_, j) => j !== i))} mobile />
           )}
@@ -1061,6 +1143,9 @@ export default function ComposeModal() {
           else { editor?.commands.setContent(htmlSource, false); setHtmlMode(false); }
         }}
       />}
+      {fwdAttachments.length > 0 && (
+        <AttachmentChips attachments={fwdAttachments.map(a => ({ name: a.filename, size: a.size }))} onRemove={i => setFwdAttachments(prev => prev.filter((_, j) => j !== i))} />
+      )}
       {attachments.length > 0 && (
         <AttachmentChips attachments={attachments} onRemove={i => setAttachments(prev => prev.filter((_, j) => j !== i))} />
       )}
@@ -1110,16 +1195,25 @@ export default function ComposeModal() {
             <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 6, userSelect: 'none' }}>
               -- signature
             </div>
-            <div
-              style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}
-              dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(fromSignature) }}
-            />
+            {renderSignatureEditor()}
           </div>
         ) : null}
 
         {(quotedBody || quotedBodyHtml) ? (
           !plaintextEmail && quotedBodyHtml ? (
-              <QuotedEmailFrame html={quotedBodyHtml} />
+            <div
+              ref={quotedHtmlRef}
+              contentEditable
+              suppressContentEditableWarning
+              style={{
+                width: '100%', minHeight: 120,
+                padding: '10px 14px',
+                borderTop: '1px solid var(--border-subtle)',
+                color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.6,
+                outline: 'none', overflowY: 'auto',
+                boxSizing: 'border-box',
+              }}
+            />
           ) : (
             <textarea
               value={quotedBody}
@@ -1578,58 +1672,6 @@ function DropItem({ icon, label, active, onClick }) {
   );
 }
 
-function QuotedEmailFrame({ html, mobile }) {
-  const iframeRef = useRef(null);
-  const [height, setHeight] = useState(200);
-
-  const srcDoc = `<!DOCTYPE html><html><head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; style-src 'unsafe-inline';">
-    <base target="_blank">
-  </head><body>${html.replace(/<a(\s)/gi, '<a rel="noopener noreferrer"$1')}<style>
-    html, body { height: auto !important; min-height: 0 !important; overflow-x: hidden !important; margin: 0 !important; padding: 0 !important; }
-    body { font-family: -apple-system, Arial, sans-serif; font-size: 13px; line-height: 1.6; color: #ccc; background: transparent !important; word-wrap: break-word; overflow-wrap: break-word; }
-    * { max-width: 100% !important; box-sizing: border-box !important; }
-    img { max-width: 100% !important; height: auto !important; }
-    table { table-layout: auto !important; }
-    a { color: #7c6af7; }
-    pre, code { white-space: pre-wrap; word-break: break-all; }
-  </style></body></html>`;
-
-  useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    const onLoad = () => {
-      const doc = iframe.contentDocument;
-      if (!doc) return;
-      const h = Math.max(
-        doc.documentElement?.scrollHeight || 0,
-        doc.body?.scrollHeight || 0,
-      );
-      if (h > 0) setHeight(Math.min(h, 400));
-    };
-    iframe.addEventListener('load', onLoad, { once: true });
-    if (iframe.contentDocument?.readyState === 'complete') onLoad();
-    return () => iframe.removeEventListener('load', onLoad);
-  }, [html]);
-
-  return (
-    <div style={{
-      borderTop: '1px solid var(--border-subtle)',
-      padding: mobile ? '0 16px' : '0 14px',
-    }}>
-      <iframe
-        ref={iframeRef}
-        srcDoc={srcDoc}
-        scrolling="no"
-        sandbox="allow-same-origin allow-popups"
-        title="Quoted email"
-        style={{ width: '1px', minWidth: '100%', border: 'none', display: 'block', height }}
-      />
-    </div>
-  );
-}
 
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes}B`;

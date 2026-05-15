@@ -51,9 +51,18 @@ export function usePushNotifications() {
 
     // Retrieve the existing subscription (if any) so the UI reflects reality
     // without requiring the user to re-subscribe on every page load.
+    // Also silently re-sync to the backend: if the push service returned 410
+    // on a previous send and the backend pruned the record, the browser still
+    // holds a valid subscription but notifications silently stopped. The
+    // subscribe endpoint is an upsert, so this is safe to call on every mount.
     navigator.serviceWorker.ready.then((reg) => {
       regRef.current = reg;
-      reg.pushManager.getSubscription().then((sub) => setSubscribed(!!sub));
+      reg.pushManager.getSubscription().then((sub) => {
+        setSubscribed(!!sub);
+        if (sub) {
+          api.pushSubscribe(sub.toJSON()).catch(() => {});
+        }
+      });
     });
   }, []);
 
