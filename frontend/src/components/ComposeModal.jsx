@@ -326,6 +326,16 @@ export default function ComposeModal() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Chrome re-evaluates spell check state for all contentEditable elements whenever new ones
+  // are added to the DOM (e.g. signature + quoted body divs in reply/forward). Setting the
+  // IDL property directly after all elements are mounted is more reliable than the HTML
+  // attribute alone for programmatically-created editors.
+  useEffect(() => {
+    if (editor?.view?.dom) {
+      editor.view.dom.spellcheck = true;
+    }
+  }, [editor]);
+
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -417,6 +427,7 @@ export default function ComposeModal() {
       ref={signatureRef}
       contentEditable
       suppressContentEditableWarning
+      spellCheck={false}
       onInput={() => { signatureContentRef.current = signatureRef.current?.innerHTML || ''; }}
       style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, outline: 'none' }}
     />
@@ -763,6 +774,7 @@ export default function ComposeModal() {
                 ref={quotedHtmlRef}
                 contentEditable
                 suppressContentEditableWarning
+                spellCheck={false}
                 style={{
                   padding: '10px 16px', borderTop: '1px solid var(--border-subtle)',
                   color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6,
@@ -1205,6 +1217,7 @@ export default function ComposeModal() {
               ref={quotedHtmlRef}
               contentEditable
               suppressContentEditableWarning
+              spellCheck={false}
               style={{
                 width: '100%', minHeight: 120,
                 padding: '10px 14px',
