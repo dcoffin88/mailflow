@@ -2401,7 +2401,7 @@ function ThreadRow({ message, isExpanded, threadMsgs, isLoadingThread, selectedM
           }}>
 
             <ActionBtn
-              title={unreadCount > 0 ? t('contextMenu.markUnread') : t('contextMenu.markRead')}
+              title={unreadCount > 0 ? t('contextMenu.markRead') : t('contextMenu.markUnread')}
               onClick={e => onMarkRead(e, message)}
             >
               {unreadCount > 0 ? (
@@ -2774,7 +2774,7 @@ function MessageRow({ message, selected, lastViewed, isChecked, selectionMode, s
           padding: '1px 2px',
         }}>
           {/* Mark read/unread */}
-          <ActionBtn title={message.is_read ? t('contextMenu.markRead') : t('contextMenu.markUnread')} onClick={e => onMarkRead(e, message)}>
+          <ActionBtn title={message.is_read ? t('contextMenu.markUnread') : t('contextMenu.markRead')} onClick={e => onMarkRead(e, message)}>
             {message.is_read ? (
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
                 <path style={{ strokeLinecap: 'round' }} d="M22,10.91v7.09c0,1.1-.9,2-2,2H4c-1.1,0-2-.9-2-2V6c0-1.1.9-2,2-2h11"/><polyline style={{ strokeLinecap: 'round' }} points="16.36 9.95 12 13 2 6"/><circle style={{ strokeMiterlimit: 10, fill: 'currentColor' }} cx="19.96" cy="6" r="3"/>
