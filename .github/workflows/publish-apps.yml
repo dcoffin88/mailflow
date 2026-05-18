@@ -115,6 +115,11 @@ jobs:
         working-directory: frontend
         run: npm run android:dist
 
+      - name: List Android release artifacts
+        if: always()
+        working-directory: frontend
+        run: find packages/android/app/build -maxdepth 6 -type f | sort || true
+
       - name: Upload Android artifact
         uses: actions/upload-artifact@v4
         with:
