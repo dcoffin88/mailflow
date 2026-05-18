@@ -2,12 +2,52 @@
   "name": "mailflow-frontend",
   "version": "1.4.0",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron:dev": "electron .",
+    "electron:dist": "electron-builder --publish never",
+    "native:prepare": "npm run build && node scripts/prepare-native-shell.cjs",
+    "android:sync": "npm run native:prepare && cap sync android",
+    "android:dist": "npm run android:sync && node scripts/build-android.cjs"
+  },
+  "build": {
+    "appId": "com.mailflow.app",
+    "productName": "MailFlow",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "native-shell/**/*",
+      "package.json"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network"
+    }
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/core": "^8.3.4",
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@tiptap/extension-image": "^3.23.1",
@@ -30,8 +70,11 @@
     "zustand": "^4.5.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.3.4",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.18",
+    "electron": "^42.1.0",
+    "electron-builder": "^26.8.1",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "vite": "^5.1.4"

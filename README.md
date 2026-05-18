@@ -73,6 +73,27 @@ There are three ways to run MailFlow. The pre-built image method is recommended 
 
 ---
 
+## Desktop and Android apps
+
+MailFlow remains a self-hosted web app, but release builds can also publish native wrappers for users who prefer an installed app alongside the PWA.
+
+- Windows, macOS, and Linux use Electron packages.
+- Android uses a Capacitor WebView package, because Electron does not support Android.
+- On first launch, the wrapper asks for the MailFlow host, such as `https://mail.your-domain.com`, stores it locally, and opens that server.
+
+To build locally:
+
+```bash
+cd frontend
+npm ci
+npm run electron:dist
+npm run android:dist
+```
+
+Android builds require a local JDK and Android SDK. The `.github/workflows/publish-apps.yml` workflow installs those tools in CI and attaches app artifacts to tagged releases.
+
+---
+
 ## Option A — Pre-built images (recommended)
 
 No cloning or building required. Docker pulls the pre-built images directly from GHCR.

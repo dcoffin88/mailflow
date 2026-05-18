@@ -1,0 +1,7 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('mailflowNative', {
+  getHost: () => ipcRenderer.invoke('mailflow:getHost'),
+  saveHost: (host) => ipcRenderer.invoke('mailflow:saveHost', host),
+  resetHost: () => ipcRenderer.invoke('mailflow:resetHost'),
+});
