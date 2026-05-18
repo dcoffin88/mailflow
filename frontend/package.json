@@ -14,6 +14,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "electron .",
+    "preelectron:dist": "node packages/scripts/prepare-electron-icons.cjs",
     "electron:dist": "electron-builder --publish never",
     "app:version": "node packages/scripts/set-app-version.cjs",
     "native:prepare": "npm run build && node packages/scripts/prepare-native-shell.cjs",
@@ -24,8 +25,10 @@
     "appId": "sh.mailflow.app",
     "productName": "MailFlow",
     "directories": {
-      "output": "packages/release"
+      "output": "packages/release",
+      "buildResources": "packages/electron/icons"
     },
+    "icon": "icon",
     "files": [
       "packages/electron/**/*",
       "packages/native-shell/**/*",
