@@ -109,8 +109,12 @@ jobs:
 
       - name: Install snapcraft
         run: |
+          sudo apt-get update
           sudo snap install snapcraft --classic --channel=7.x/stable
           echo "/snap/bin" >> "$GITHUB_PATH"
+
+      - name: Refresh package indexes
+        run: sudo apt-get update
 
       - name: Build Linux arm64 snap
         working-directory: frontend
