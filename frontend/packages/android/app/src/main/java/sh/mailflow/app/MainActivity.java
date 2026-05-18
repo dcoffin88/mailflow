@@ -1,4 +1,4 @@
-package com.mailflow.app;
+package sh.mailflow.app;
 
 import com.getcapacitor.BridgeActivity;
 

@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">MailFlow</string>
     <string name="title_activity_main">MailFlow</string>
-    <string name="package_name">com.mailflow.app</string>
-    <string name="custom_url_scheme">com.mailflow.app</string>
+    <string name="package_name">sh.mailflow.app</string>
+    <string name="custom_url_scheme">sh.mailflow.app</string>
 </resources>

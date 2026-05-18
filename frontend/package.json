@@ -14,7 +14,7 @@
     "android:dist": "npm run android:sync && node packages/scripts/build-android.cjs"
   },
   "build": {
-    "appId": "com.mailflow.app",
+    "appId": "sh.mailflow.app",
     "productName": "MailFlow",
     "directories": {
       "output": "packages/release"
