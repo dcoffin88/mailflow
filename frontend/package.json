@@ -35,7 +35,7 @@
       "package.json"
     ],
     "win": {
-      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "artifactName": "${productName}-${version}-Setup.${ext}",
       "signAndEditExecutable": false,
       "target": [
         "nsis",
@@ -43,10 +43,10 @@
       ]
     },
     "portable": {
-      "artifactName": "${productName}-Portable-${version}.${ext}"
+      "artifactName": "${productName}-${version}-Portable.${ext}"
     },
     "mac": {
-      "artifactName": "${productName}-Universal-${version}.${ext}",
+      "artifactName": "${productName}-${version}-Universal.${ext}",
       "target": [
         {
           "target": "dmg",
