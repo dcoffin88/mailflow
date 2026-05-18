@@ -100,7 +100,7 @@ export default function MessageList() {
   // Apply optimistic read guard to a batch of messages from the server.
   // Prevents a concurrent sync refresh from reverting a pending or recently-completed
   // mark-read before the IMAP flag has propagated back to the DB.
-  const applyReadGuards = useCallback((msgs) => {
+  const applyReadGuard = useCallback((msgs) => {
     msgs = applyDeleteGuard(msgs);
     if (pendingMarkReadMap.size === 0 && completedMarkReadMap.size === 0) return msgs;
     return msgs.map(m => {
@@ -211,7 +211,7 @@ export default function MessageList() {
         const data = await api.getMessages(params);
         if (cancelled) return;
         setMessagesTotal(data.total);
-        setMessages(applyReadGuards(data.messages));
+        setMessages(applyReadGuard(data.messages));
         setMessagesOffset(data.messages.length);
         setHasMoreMessages(data.messages.length < data.total);
 
@@ -251,7 +251,7 @@ export default function MessageList() {
       if (unreadOnly) params.unreadOnly = 'true';
       if (useStore.getState().threadedView) params.threaded = 'true';
       const data = await api.getMessages(params);
-      appendMessages(applyReadGuards(data.messages));
+      appendMessages(applyReadGuard(data.messages));
       setMessagesOffset(currentOffset + data.messages.length);
       setHasMoreMessages(currentOffset + data.messages.length < data.total);
     } catch (err) {
@@ -259,7 +259,7 @@ export default function MessageList() {
     } finally {
       setLoadingMessages(false);
     }
-  }, [selectedAccountId, selectedFolder, unreadOnly, pageSize, loadingMessages, hasMoreMessages, applyReadGuards]);
+  }, [selectedAccountId, selectedFolder, unreadOnly, pageSize, loadingMessages, hasMoreMessages, applyReadGuard]);
 
   // Listen for backfill refresh events from WebSocket
   useEffect(() => {
@@ -286,7 +286,7 @@ export default function MessageList() {
             setMessagesTotal(data.total);
             // If the unread filter is on and the currently open message was just marked
             // read, the server won't return it — preserve it so the user can keep reading.
-            let msgs = applyReadGuards(data.messages);
+            let msgs = applyReadGuard(data.messages);
             const activeId = useStore.getState().selectedMessageId;
             if (unreadOnly && activeId && !msgs.some(m => m.id === activeId)) {
               const kept = useStore.getState().messages.find(m => m.id === activeId);
@@ -306,7 +306,7 @@ export default function MessageList() {
     };
     window.addEventListener('mailflow:refresh', handler);
     return () => window.removeEventListener('mailflow:refresh', handler);
-  }, [selectedAccountId, selectedFolder, unreadOnly, searchQuery, applyReadGuards]);
+  }, [selectedAccountId, selectedFolder, unreadOnly, searchQuery, applyReadGuard]);
 
   // Search
   const SEARCH_PAGE = 50;
@@ -325,7 +325,7 @@ export default function MessageList() {
       try {
         const data = await api.search(searchQuery, selectedAccountId || undefined, { offset: 0 });
         if (searchSeq.current !== seq) return;
-        setSearchResults(applyReadGuards(data.messages));
+        setSearchResults(applyReadGuard(data.messages));
         setSearchHasMore(data.messages.length === SEARCH_PAGE);
       } catch (err) {
         if (searchSeq.current === seq) console.error('Search failed:', err);
@@ -334,7 +334,7 @@ export default function MessageList() {
       }
     }, 300);
     return () => clearTimeout(searchTimer.current);
-  }, [searchQuery, selectedAccountId, applyReadGuards]);
+  }, [searchQuery, selectedAccountId, applyReadGuard]);
 
   const loadMoreSearch = useCallback(async () => {
     if (searchLoadingMore) return;
@@ -346,14 +346,14 @@ export default function MessageList() {
       // Discard results if the query changed while we were fetching
       if (useStore.getState().searchQuery !== qSnapshot) return;
       const current = useStore.getState().searchResults;
-      useStore.setState({ searchResults: [...current, ...applyReadGuards(data.messages)] });
+      useStore.setState({ searchResults: [...current, ...applyReadGuard(data.messages)] });
       setSearchHasMore(data.messages.length === SEARCH_PAGE);
     } catch (err) {
       console.error('Search load more failed:', err);
     } finally {
       setSearchLoadingMore(false);
     }
-  }, [searchQuery, selectedAccountId, searchLoadingMore, applyReadGuards]);
+  }, [searchQuery, selectedAccountId, searchLoadingMore, applyReadGuard]);
 
   // Infinite scroll + scroll-to-top visibility
   const handleScroll = useCallback(() => {
@@ -383,7 +383,7 @@ export default function MessageList() {
       if (threadedView) params.threaded = 'true';
       const data = await api.getMessages(params);
       setMessagesTotal(data.total);
-      setMessages(applyReadGuards(data.messages));
+      setMessages(applyReadGuard(data.messages));
       setMessagesOffset((pageNum - 1) * pageSize + data.messages.length);
       setHasMoreMessages(false);
       setExpandedThreadId(null);
@@ -393,7 +393,7 @@ export default function MessageList() {
     } finally {
       setLoadingMessages(false);
     }
-  }, [selectedAccountId, selectedFolder, unreadOnly, pageSize, loadingMessages, threadedView, applyReadGuards]);
+  }, [selectedAccountId, selectedFolder, unreadOnly, pageSize, loadingMessages, threadedView, applyReadGuard]);
 
   const handleSync = async () => {
     if (syncing) return;
