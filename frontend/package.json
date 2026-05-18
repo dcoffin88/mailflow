@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "electron:dev": "electron .",
     "electron:dist": "electron-builder --publish never",
+    "app:version": "node packages/scripts/set-app-version.cjs",
     "native:prepare": "npm run build && node packages/scripts/prepare-native-shell.cjs",
     "android:sync": "npm run native:prepare && node packages/scripts/sync-android.cjs",
     "android:dist": "npm run android:sync && node packages/scripts/build-android.cjs"
