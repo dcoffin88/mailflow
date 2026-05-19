@@ -1,0 +1,126 @@
+import { useRef, useEffect, useCallback } from 'react';
+
+const SWIPE_THRESHOLD = 72;
+
+export function useSwipeRow({ isMobile, message, onSwipeLeft, onSwipeRight, onLongPress }) {
+  const contentRef = useRef(null);
+  const swipeBgLeftRef = useRef(null);
+  const swipeBgRightRef = useRef(null);
+  const swipeRef = useRef({ active: false, startX: 0, startY: 0, dir: null, x: 0 });
+  const longPressTimerRef = useRef(null);
+
+  const springBack = useCallback(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    el.style.transition = 'transform 0.25s cubic-bezier(0.25,0.46,0.45,0.94)';
+    el.style.transform = 'translateX(0)';
+    el.style.boxShadow = '';
+    setTimeout(() => {
+      if (swipeBgLeftRef.current)  { swipeBgLeftRef.current.style.display = 'none'; swipeBgLeftRef.current.style.opacity = '1'; }
+      if (swipeBgRightRef.current) { swipeBgRightRef.current.style.display = 'none'; swipeBgRightRef.current.style.opacity = '1'; }
+    }, 260);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    const el = contentRef.current;
+    if (!el) return;
+
+    const showBgs = () => {
+      if (swipeBgLeftRef.current)  { swipeBgLeftRef.current.style.display = 'flex'; swipeBgLeftRef.current.style.opacity = '0'; }
+      if (swipeBgRightRef.current) { swipeBgRightRef.current.style.display = 'flex'; swipeBgRightRef.current.style.opacity = '0'; }
+    };
+    const hideBgs = () => {
+      if (swipeBgLeftRef.current)  swipeBgLeftRef.current.style.display = 'none';
+      if (swipeBgRightRef.current) swipeBgRightRef.current.style.display = 'none';
+    };
+    const cancelLongPress = () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+    };
+
+    const onStart = (e) => {
+      const t = e.touches[0];
+      swipeRef.current = { active: false, startX: t.clientX, startY: t.clientY, dir: null, x: 0 };
+      showBgs();
+      if (onLongPress) {
+        longPressTimerRef.current = setTimeout(() => {
+          longPressTimerRef.current = null;
+          springBack();
+          onLongPress(message.id);
+        }, 500);
+      }
+    };
+
+    const onMove = (e) => {
+      const s = swipeRef.current;
+      const t = e.touches[0];
+      const dx = t.clientX - s.startX;
+      const dy = t.clientY - s.startY;
+      if (!s.dir) {
+        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+        cancelLongPress();
+        s.dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+      }
+      if (s.dir === 'v') return;
+      if ((dx < 0 && !onSwipeLeft) || (dx > 0 && !onSwipeRight)) return;
+      e.preventDefault();
+      s.active = true;
+      s.x = Math.max(-160, Math.min(160, dx));
+      el.style.transition = 'none';
+      el.style.transform = `translateX(${s.x}px)`;
+      const progress = Math.min(Math.abs(s.x) / SWIPE_THRESHOLD, 1);
+      const iconScale = 0.7 + 0.3 * progress;
+      if (s.x > 0 && swipeBgLeftRef.current) {
+        swipeBgLeftRef.current.style.opacity = String(0.3 + 0.7 * progress);
+        const icon = swipeBgLeftRef.current.querySelector('svg');
+        if (icon) icon.style.transform = `scale(${iconScale})`;
+      } else if (s.x < 0 && swipeBgRightRef.current) {
+        swipeBgRightRef.current.style.opacity = String(0.3 + 0.7 * progress);
+        const icon = swipeBgRightRef.current.querySelector('svg');
+        if (icon) icon.style.transform = `scale(${iconScale})`;
+      }
+      el.style.boxShadow = progress > 0.1 ? `0 4px 20px rgba(0,0,0,${0.3 * progress})` : '';
+    };
+
+    const onEnd = () => {
+      cancelLongPress();
+      const s = swipeRef.current;
+      if (!s.active) { s.dir = null; hideBgs(); return; }
+      const x = s.x;
+      s.active = false; s.dir = null; s.x = 0;
+      springBack();
+      if (x < -SWIPE_THRESHOLD) {
+        onSwipeLeft && onSwipeLeft(message);
+      } else if (x > SWIPE_THRESHOLD) {
+        onSwipeRight && onSwipeRight(message);
+      }
+    };
+
+    const onCancel = () => {
+      cancelLongPress();
+      springBack();
+    };
+
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    el.addEventListener('touchcancel', onCancel, { passive: true });
+    return () => {
+      cancelLongPress();
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onCancel);
+      el.style.transform = 'translateX(0)';
+      el.style.transition = '';
+      el.style.boxShadow = '';
+      if (swipeBgLeftRef.current)  swipeBgLeftRef.current.style.display = 'none';
+      if (swipeBgRightRef.current) swipeBgRightRef.current.style.display = 'none';
+    };
+  }, [isMobile, message, onSwipeLeft, onSwipeRight, onLongPress, springBack]);
+
+  return { contentRef, swipeBgLeftRef, swipeBgRightRef, springBack };
+}

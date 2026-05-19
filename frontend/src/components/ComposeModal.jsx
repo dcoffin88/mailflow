@@ -14,8 +14,6 @@ import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { TableCell } from '@tiptap/extension-table-cell';
-import Picker from '@emoji-mart/react';
-import emojiData from '@emoji-mart/data';
 
 // Resize an image blob/file to max maxW pixels wide, preserving aspect ratio.
 // Returns a Promise<string> of a base64 data URL.
@@ -1338,6 +1336,7 @@ function Sep() {
 function RichToolbar({ editor, onAttach, onInsertImage, onInsertTable, htmlMode, onToggleHtml }) {
   const [colorPos, setColorPos] = useState(null);
   const [emojiPos, setEmojiPos] = useState(null);
+  const emojiPickerRef = useRef(null);
   const [linkPos, setLinkPos] = useState(null);
   const [tablePos, setTablePos] = useState(null);
   const [linkUrl, setLinkUrl] = useState('');
@@ -1393,9 +1392,16 @@ function RichToolbar({ editor, onAttach, onInsertImage, onInsertTable, htmlMode,
     setColorPos({ top: r.bottom + 4, left: r.left });
     setEmojiPos(null); setLinkPos(null);
   };
-  const openEmoji = (e) => {
+  const openEmoji = async (e) => {
     e.preventDefault();
     if (emojiPos) { setEmojiPos(null); return; }
+    if (!emojiPickerRef.current) {
+      const [{ default: Picker }, { default: data }] = await Promise.all([
+        import('@emoji-mart/react'),
+        import('@emoji-mart/data'),
+      ]);
+      emojiPickerRef.current = { Picker, data };
+    }
     const r = emojiBtnRef.current.getBoundingClientRect();
     const left = Math.max(4, Math.min(r.left, window.innerWidth - 220));
     const spaceBelow = window.innerHeight - r.bottom;
@@ -1596,9 +1602,9 @@ function RichToolbar({ editor, onAttach, onInsertImage, onInsertTable, htmlMode,
         </div>
       )}
 
-      {emojiPos && (
+      {emojiPos && emojiPickerRef.current && (
         <div ref={emojiPopRef} style={{ position: 'fixed', top: emojiPos.top, bottom: emojiPos.bottom, left: emojiPos.left, zIndex: 9900, height: 284, overflow: 'hidden', borderRadius: 8 }}>
-          <Picker data={emojiData} onEmojiSelect={emoji => { editor.chain().focus().insertContent(emoji.native).run(); setEmojiPos(null); }}
+          <emojiPickerRef.current.Picker data={emojiPickerRef.current.data} onEmojiSelect={emoji => { editor.chain().focus().insertContent(emoji.native).run(); setEmojiPos(null); }}
             theme="auto" previewPosition="none" skinTonePosition="none"
             perLine={7} emojiSize={18} emojiButtonSize={26} maxFrequentRows={1} />
         </div>

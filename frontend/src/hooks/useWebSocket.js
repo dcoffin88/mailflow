@@ -26,7 +26,6 @@ export function useWebSocket() {
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
 
     ws.onopen = () => {
-      console.log('WebSocket connected');
       const wasReconnect = reconnectAttempt.current > 0;
       reconnectAttempt.current = 0;
       // Ping every 30s to keep alive
