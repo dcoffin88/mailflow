@@ -1,11 +1,10 @@
-const { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, Notification, ipcMain, nativeImage, session, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
 const CONFIG_FILE = 'mailflow-host.json';
 
 let mainWindow;
-let tray;
 let isQuitting = false;
 let unreadCount = 0;
 
@@ -132,30 +131,6 @@ function setupMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function setupTray() {
-  if (process.platform !== 'win32') return;
-  if (tray) return;
-
-  tray = new Tray(getIconPath());
-  tray.setToolTip('MailFlow');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show MailFlow', click: showMainWindow },
-    {
-      label: 'Change MailFlow Host',
-      click: () => {
-        clearHost();
-        showMainWindow();
-        loadSetup();
-      },
-    },
-    { type: 'separator' },
-    { label: 'Quit MailFlow', click: quitApp },
-  ]));
-
-  tray.on('click', showMainWindow);
-  tray.on('double-click', showMainWindow);
-}
-
 function isConfiguredHostUrl(url) {
   const host = readHost();
   if (!host) return false;
@@ -251,14 +226,6 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  mainWindow.on('close', (event) => {
-    if (process.platform !== 'win32') return;
-    if (isQuitting) return;
-
-    event.preventDefault();
-    mainWindow.hide();
-  });
-
   mainWindow.on('show', applyUnreadOverlay);
 
   const host = readHost();
@@ -293,7 +260,6 @@ ipcMain.handle('mailflow:setUnreadCount', (_event, count) => setUnreadCount(coun
 app.whenReady().then(() => {
   setupPermissions();
   setupMenu();
-  setupTray();
   createWindow();
 
   app.on('activate', () => {
