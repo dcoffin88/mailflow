@@ -254,6 +254,10 @@ router.get('/messages', async (req, res) => {
       WHERE ${where}
     `, filterValues);
 
+    if (accountId && userAccountIds.includes(accountId) && threadResult.rows.length) {
+      imapManager.prefetchFolderBodies(accountId, threadResult.rows.map(r => r.id))
+        .catch(err => console.warn('Folder body prefetch error:', err.message));
+    }
     return res.json({
       messages: threadResult.rows,
       total: threadCountResult.rows[0]?.total ?? 0,
@@ -278,6 +282,10 @@ router.get('/messages', async (req, res) => {
     LIMIT $${p++} OFFSET $${p++}
   `, values);
 
+  if (accountId && userAccountIds.includes(accountId) && result.rows.length) {
+    imapManager.prefetchFolderBodies(accountId, result.rows.map(r => r.id))
+      .catch(err => console.warn('Folder body prefetch error:', err.message));
+  }
   res.json({ messages: result.rows, total });
 });
 
@@ -435,10 +443,11 @@ router.get('/messages/:id/body', async (req, res) => {
     return res.json({ html: responseHtml, text: message.body_text, attachments, hasBlockedRemoteImages });
   }
 
-  // Fetch from IMAP
+  // Fetch from IMAP — signal user activity so background jobs back off during this request.
   try {
     const accountResult = await query('SELECT * FROM email_accounts WHERE id = $1', [message.account_id]);
     const account = accountResult.rows[0];
+    imapManager.noteUserActivity(account.id);
 
     const { html, text, attachments } = await imapManager.fetchMessageBody(account, message.uid, message.folder);
 

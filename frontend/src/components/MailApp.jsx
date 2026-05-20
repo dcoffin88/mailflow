@@ -307,11 +307,9 @@ export default function MailApp() {
           <div style={{ flex: 1, display: selectedMessageId ? 'none' : 'flex', overflow: 'hidden', height: '100%' }}>
             <MessageList />
           </div>
-          {selectedMessageId && (
-            <div style={{ flex: 1, display: 'flex', overflow: 'hidden', height: '100%' }}>
-              <MessagePane />
-            </div>
-          )}
+          <div style={{ flex: 1, display: selectedMessageId ? 'flex' : 'none', overflow: 'hidden', height: '100%' }}>
+            <MessagePane />
+          </div>
         </>
       ) : (
         <>

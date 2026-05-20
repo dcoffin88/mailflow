@@ -16,6 +16,11 @@ const logAccount = (account) => redactEmail(account?.email_address || '');
 // Body parts that cover ~99% of real-world email structures (used for full body caching)
 const BODY_PREFETCH_PARTS = ['1', '1.1', '1.2', '2', '2.1', '2.2', '1.1.1', '1.2.1'];
 
+// How long (ms) user must be idle before background IMAP jobs (snippet indexer, folder
+// body prefetch) resume after a live body fetch. Keeps click-time fetches snappy by
+// deprioritising background traffic whenever the user is actively reading mail.
+const QUIET_WINDOW_MS = 8000;
+
 // Unicode bidi override/embedding characters that can visually reverse a filename,
 // making "malware.exe" display as "malware.pdf" to the user.
 // U+202A-U+202E: LRE, RLE, PDF, LRO, RLO
@@ -549,6 +554,7 @@ export class ImapManager {
     this.connectingAccounts = new Set(); // prevent concurrent connectAccount calls for same account
     this.userSyncIntervalMs = new Map(); // userId -> interval ms (user-configurable)
     this.snippetIndexerRunning = new Set(); // accountId — prevent duplicate snippet-index runs
+    this.lastUserActivity = new Map();      // accountId -> ms timestamp of last live body fetch
     this.syncTickCount = new Map(); // accountId -> successful sync ticks (for reconcile scheduling)
     this._flagDebounceTimers   = new Map(); // accountId -> debounce timer for flag-change syncs
     this._expungeDebounceTimers = new Map(); // accountId -> debounce timer for expunge reconciles
@@ -1585,6 +1591,12 @@ export class ImapManager {
     }
   }
 
+  // Called by the body-fetch route whenever a user opens a message that required a live
+  // IMAP fetch. The timestamp is used by background jobs to back off during active sessions.
+  noteUserActivity(accountId) {
+    this.lastUserActivity.set(accountId, Date.now());
+  }
+
   // Background job that fetches text snippets for messages that were backfilled without
   // body parts (the common case — backfill runs metadata-only for speed). Runs per-account
   // after backfill completes, and also at connect time for existing accounts.
@@ -1702,7 +1714,11 @@ export class ImapManager {
             await new Promise(r => setTimeout(r, cfg.errorDelay));
           }
 
-          await new Promise(r => setTimeout(r, batchDelay));
+          // Pause longer when the user is actively opening messages so background
+          // IMAP traffic doesn't compete with click-time body fetches.
+          const quietFor = Date.now() - (this.lastUserActivity.get(account.id) || 0);
+          const extraDelay = quietFor < QUIET_WINDOW_MS ? QUIET_WINDOW_MS - quietFor : 0;
+          await new Promise(r => setTimeout(r, batchDelay + extraDelay));
         }
       }
 
@@ -1786,6 +1802,62 @@ export class ImapManager {
         }
       } catch (err) {
         console.warn(`Body prefetch failed for uid ${msg.uid}:`, err.message);
+      }
+    }
+  }
+
+  // Background body prefetch for messages currently visible in a folder.
+  // Called after GET /messages responds so the user gets a fast first impression
+  // without waiting for this work. Respects the quiet window — pauses between
+  // messages when the user is actively clicking so live fetches stay snappy.
+  // Skipped for providers that throttle background body fetching (e.g. Gmail).
+  async prefetchFolderBodies(accountId, messageIds) {
+    if (!messageIds.length) return;
+
+    const accountResult = await query('SELECT * FROM email_accounts WHERE id = $1', [accountId]);
+    if (!accountResult.rows.length) return;
+    const account = accountResult.rows[0];
+    if (!providerProfile(account).snippetIndex) return;
+
+    const uncachedResult = await query(
+      `SELECT id, uid, folder FROM messages
+       WHERE id = ANY($1::uuid[]) AND body_html IS NULL AND body_text IS NULL`,
+      [messageIds]
+    );
+    if (!uncachedResult.rows.length) return;
+
+    for (const msg of uncachedResult.rows) {
+      const quietFor = Date.now() - (this.lastUserActivity.get(accountId) || 0);
+      if (quietFor < QUIET_WINDOW_MS) {
+        await new Promise(r => setTimeout(r, QUIET_WINDOW_MS - quietFor));
+      }
+
+      try {
+        const existing = await query(
+          'SELECT id FROM messages WHERE id = $1 AND (body_html IS NOT NULL OR body_text IS NOT NULL)',
+          [msg.id]
+        );
+        if (existing.rows.length) continue;
+
+        const { html, text, attachments } = await this.fetchMessageBody(account, msg.uid, msg.folder);
+        const safeHtml = html ? sanitizeEmail(html) : null;
+        if (safeHtml || text) {
+          let snip = '';
+          if (text) {
+            snip = text.replace(/\s+/g, ' ').trim().substring(0, 200);
+          } else if (safeHtml || html) {
+            snip = buildSnippetFromHtml(safeHtml || html);
+          }
+          await query(
+            `UPDATE messages
+             SET body_html = $1, body_text = $2, attachments = $3,
+                 snippet = CASE WHEN $5 != '' THEN $5 ELSE snippet END
+             WHERE id = $4`,
+            [sanitizeStr(safeHtml), sanitizeStr(text), JSON.stringify(attachments || []), msg.id, sanitizeStr(snip)]
+          );
+        }
+      } catch (err) {
+        console.warn(`Folder body prefetch failed for uid ${msg.uid}:`, err.message);
       }
     }
   }
