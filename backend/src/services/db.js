@@ -12,14 +12,12 @@ export const pool = new Pool({
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
-});
-
-// Set a per-query statement timeout so a slow or runaway query
-// can't hold a connection indefinitely.
-pool.on('connect', client => {
-  client.query('SET statement_timeout = 30000').catch(err =>
-    console.error('Failed to set statement_timeout:', err.message)
-  );
+  // Apply statement_timeout via PostgreSQL startup options so it is set during
+  // the connection handshake, before any queries can run. The alternative —
+  // pool.on('connect') + client.query('SET ...') — is racy: pg does not await
+  // the async handler before dispatching the client, so the SET command and the
+  // first application query can land on the same client concurrently.
+  options: '-c statement_timeout=30000',
 });
 
 export async function query(text, params) {

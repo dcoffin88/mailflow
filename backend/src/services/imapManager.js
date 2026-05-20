@@ -220,6 +220,7 @@ function safeDate(d) {
 // snippetIndex:        run the background snippet indexer after backfill.
 //                      Disabled for providers that throttle body fetches too aggressively.
 // skipFolderPatterns:  folder path substrings to skip during backfill (label-view dedup).
+// skipFolderNames:     exact folder paths to skip (non-selectable namespace containers).
 // batchSize/Delay/errorDelay/batchesPerConn: backfill rate-limit tuning.
 const PROVIDERS = {
   google: {
@@ -231,6 +232,9 @@ const PROVIDERS = {
     snippetIndex: false,
     speculativeFetch: false,
     skipFolderPatterns: ['all mail', '[gmail]/starred', '[gmail]/important'],
+    // [Gmail] is a namespace container — not a selectable mailbox. It must be
+    // matched exactly so that real subfolders like [Gmail]/Drafts are not skipped.
+    skipFolderNames: ['[gmail]'],
   },
   yahoo: {
     batchSize: 100, batchDelay: 2000, errorDelay: 30000, batchesPerConn: 10,
@@ -239,6 +243,7 @@ const PROVIDERS = {
     snippetIndex: true,
     speculativeFetch: false,
     skipFolderPatterns: [],
+    skipFolderNames: [],
   },
   apple: {
     // iCloud is permissive — large batches, short delay.
@@ -248,6 +253,7 @@ const PROVIDERS = {
     snippetIndex: true,
     speculativeFetch: true,
     skipFolderPatterns: [],
+    skipFolderNames: [],
   },
   microsoft: {
     batchSize: 100, batchDelay: 1500, errorDelay: 15000, batchesPerConn: 15,
@@ -256,6 +262,7 @@ const PROVIDERS = {
     snippetIndex: true,
     speculativeFetch: true,
     skipFolderPatterns: [],
+    skipFolderNames: [],
   },
   generic: {
     batchSize: 100, batchDelay: 1500, errorDelay: 15000, batchesPerConn: 15,
@@ -264,6 +271,7 @@ const PROVIDERS = {
     snippetIndex: true,
     speculativeFetch: true,
     skipFolderPatterns: [],
+    skipFolderNames: [],
   },
 };
 
@@ -1589,7 +1597,7 @@ export class ImapManager {
     if (this.backfillAllRunning.has(account.id)) return;
     this.backfillAllRunning.add(account.id);
     try {
-      const { skipFolderPatterns } = providerProfile(account);
+      const { skipFolderPatterns, skipFolderNames } = providerProfile(account);
 
       // INBOX first — highest priority, existing behaviour
       await this.backfillMessages(account, 'INBOX');
@@ -1601,7 +1609,9 @@ export class ImapManager {
       );
 
       for (const { path } of folderResult.rows) {
-        if (skipFolderPatterns.some(pat => path.toLowerCase().includes(pat))) continue;
+        const pathLower = path.toLowerCase();
+        if (skipFolderPatterns.some(pat => pathLower.includes(pat))) continue;
+        if (skipFolderNames.includes(pathLower)) continue;
         await this.backfillMessages(account, path).catch(err =>
           console.warn(`Backfill skipped ${logAccount(account)}/${path}: ${err.message}`)
         );
