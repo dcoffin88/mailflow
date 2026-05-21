@@ -1668,10 +1668,12 @@ export default function MessageList() {
         transition: 'box-shadow 0.2s ease',
       }}>
         {/* Title row: label + count + sync (always fits) */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isNarrow ? 6 : 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: isNarrow ? 6 : 10 }}>
           <h2 style={{
             margin: 0, fontSize: 15, fontWeight: 600,
             color: 'var(--text-primary)',
+            flex: 1, minWidth: 0,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
             {label}
           </h2>
