@@ -902,7 +902,7 @@ export default function Sidebar() {
                           background: account.color, padding: '1px 6px',
                           borderRadius: 10, minWidth: 20, textAlign: 'center',
                         }}>
-                          {unread > 99 ? '99+' : unread}
+                          {unread > 999 ? '999+' : unread}
                         </span>
                       )}
                       {/* Expand toggle */}
@@ -1471,7 +1471,7 @@ function NavItem({ icon, label, active, collapsed, badge, onClick }) {
               background: 'var(--accent)', padding: '1px 7px',
               borderRadius: 10, minWidth: 20, textAlign: 'center',
             }}>
-              {badge > 99 ? '99+' : badge}
+              {badge > 999 ? '999+' : badge}
             </span>
           )}
         </>

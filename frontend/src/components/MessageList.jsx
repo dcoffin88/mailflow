@@ -99,7 +99,7 @@ export default function MessageList() {
     searchQuery, setSearchQuery, isSearching, setIsSearching,
     searchResults, setSearchResults, openCompose, accountsReady, accounts,
     messagesRefreshToken, layout, setLayout, pageSize, setPageSize, scrollMode,
-    setMobileSidebarOpen,
+    setMobileSidebarOpen, unreadCounts,
     threadedView, expandedThreadId, setExpandedThreadId,
     threadMessages, setThreadMessages, loadingThread, setLoadingThread,
     hoverQuickActions,
@@ -1513,6 +1513,10 @@ export default function MessageList() {
     ? `Search: "${searchQuery}"`
     : isUnified ? t('sidebar.allInboxes') : selectedFolder;
 
+  const headerUnread = isUnified
+    ? unreadCounts.total
+    : (unreadCounts.byAccount[selectedAccountId] ?? 0);
+
   // Derived bulk-selection values (computed fresh each render, no stale closure risk)
   const selectionMode = selectedIds.size > 0 || selectionModeActive;
   const selectedMsgs = displayMessages.filter(m => selectedIds.has(m.id));
@@ -1561,14 +1565,27 @@ export default function MessageList() {
             </svg>
           </button>
 
-          {/* Folder / account title */}
-          <h2 style={{
-            flex: 1, margin: 0, fontSize: 16, fontWeight: 600,
-            color: 'var(--text-primary)', overflow: 'hidden',
-            textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
-            {label}
-          </h2>
+          {/* Folder / account title + unread count */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+            <h2 style={{
+              margin: 0, fontSize: 16, fontWeight: 600,
+              color: 'var(--text-primary)', overflow: 'hidden',
+              textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              minWidth: 0,
+            }}>
+              {label}
+            </h2>
+            {headerUnread > 0 && !searchQuery.trim() && (
+              <span style={{
+                flexShrink: 0,
+                fontSize: 11, fontWeight: 600, color: 'white',
+                background: 'var(--accent)', padding: '1px 7px',
+                borderRadius: 10, minWidth: 20, textAlign: 'center',
+              }}>
+                {headerUnread > 999 ? '999+' : headerUnread}
+              </span>
+            )}
+          </div>
 
           {/* Unread filter */}
           <button
