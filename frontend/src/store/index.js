@@ -299,6 +299,32 @@ export const useStore = create((set, get) => ({
     return api.savePreferences({ hiddenFolders: hf }).catch(() => {});
   },
 
+  // Sidebar tree state — persisted so the tree looks the same after reload/re-login
+  expandedAccounts: (() => {
+    try { return JSON.parse(localStorage.getItem('mailflow_expanded_accounts') || '{}'); }
+    catch (_) { return {}; }
+  })(),
+  setExpandedAccounts: (updater) => {
+    const next = typeof updater === 'function' ? updater(get().expandedAccounts) : updater;
+    localStorage.setItem('mailflow_expanded_accounts', JSON.stringify(next));
+    set({ expandedAccounts: next });
+    schedulePrefSave({ expandedAccounts: next });
+  },
+
+  // collapsedFolders stored as array of "accountId:path" keys (Set can't be JSON-serialised)
+  collapsedFolders: (() => {
+    try { return JSON.parse(localStorage.getItem('mailflow_collapsed_folders') || '[]'); }
+    catch (_) { return []; }
+  })(),
+  toggleCollapsedFolder: (accountId, path) => {
+    const key = `${accountId}:${path}`;
+    const prev = get().collapsedFolders;
+    const next = prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key];
+    localStorage.setItem('mailflow_collapsed_folders', JSON.stringify(next));
+    set({ collapsedFolders: next });
+    schedulePrefSave({ collapsedFolders: next });
+  },
+
   // Favorite folders — [{ accountId, path }, ...] ordered by insertion
   favoriteFolders: (() => {
     try { return JSON.parse(localStorage.getItem('mailflow_favorite_folders') || '[]'); }
@@ -371,6 +397,14 @@ export const useStore = create((set, get) => ({
       if (prefs.imageWhitelist) set({ imageWhitelist: prefs.imageWhitelist });
       if (prefs.shortcuts) set({ shortcuts: prefs.shortcuts });
       if (prefs.hiddenFolders) set({ hiddenFolders: prefs.hiddenFolders });
+      if (prefs.expandedAccounts && typeof prefs.expandedAccounts === 'object' && !Array.isArray(prefs.expandedAccounts)) {
+        localStorage.setItem('mailflow_expanded_accounts', JSON.stringify(prefs.expandedAccounts));
+        set({ expandedAccounts: prefs.expandedAccounts });
+      }
+      if (Array.isArray(prefs.collapsedFolders)) {
+        localStorage.setItem('mailflow_collapsed_folders', JSON.stringify(prefs.collapsedFolders));
+        set({ collapsedFolders: prefs.collapsedFolders });
+      }
       if (Array.isArray(prefs.favoriteFolders)) {
         localStorage.setItem('mailflow_favorite_folders', JSON.stringify(prefs.favoriteFolders));
         set({ favoriteFolders: prefs.favoriteFolders });
