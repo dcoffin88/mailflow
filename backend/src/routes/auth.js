@@ -348,12 +348,16 @@ router.patch('/preferences', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
   const { theme, font, layout, notificationSound, pageSize, scrollMode, syncInterval,
           blockRemoteImages, imageWhitelist, shortcuts, hiddenFolders, language,
-          threadedView, plaintextEmail, hoverQuickActions, swipeActions } = req.body;
+          threadedView, plaintextEmail, hoverQuickActions, swipeActions,
+          expandedAccounts, collapsedFolders, favoriteFolders } = req.body;
   // JSONB fields must be serialised to strings for the ::jsonb cast
-  const imageWhitelistJson  = imageWhitelist  != null ? JSON.stringify(imageWhitelist)  : null;
-  const shortcutsJson       = shortcuts       != null ? JSON.stringify(shortcuts)       : null;
-  const hiddenFoldersJson   = hiddenFolders   != null ? JSON.stringify(hiddenFolders)   : null;
-  const swipeActionsJson    = swipeActions    != null ? JSON.stringify(swipeActions)    : null;
+  const imageWhitelistJson    = imageWhitelist    != null ? JSON.stringify(imageWhitelist)    : null;
+  const shortcutsJson         = shortcuts         != null ? JSON.stringify(shortcuts)         : null;
+  const hiddenFoldersJson     = hiddenFolders     != null ? JSON.stringify(hiddenFolders)     : null;
+  const swipeActionsJson      = swipeActions      != null ? JSON.stringify(swipeActions)      : null;
+  const expandedAccountsJson  = expandedAccounts  != null ? JSON.stringify(expandedAccounts)  : null;
+  const collapsedFoldersJson  = collapsedFolders  != null ? JSON.stringify(collapsedFolders)  : null;
+  const favoriteFoldersJson   = favoriteFolders   != null ? JSON.stringify(favoriteFolders)   : null;
   await query(`
     UPDATE users
     SET preferences = preferences
@@ -373,11 +377,15 @@ router.patch('/preferences', async (req, res) => {
       || CASE WHEN $15::boolean IS NOT NULL THEN jsonb_build_object('plaintextEmail', $15::boolean) ELSE '{}'::jsonb END
       || CASE WHEN $16::boolean IS NOT NULL THEN jsonb_build_object('hoverQuickActions', $16::boolean) ELSE '{}'::jsonb END
       || CASE WHEN $17::jsonb IS NOT NULL THEN jsonb_build_object('swipeActions', $17::jsonb) ELSE '{}'::jsonb END
+      || CASE WHEN $18::jsonb IS NOT NULL THEN jsonb_build_object('expandedAccounts', $18::jsonb) ELSE '{}'::jsonb END
+      || CASE WHEN $19::jsonb IS NOT NULL THEN jsonb_build_object('collapsedFolders', $19::jsonb) ELSE '{}'::jsonb END
+      || CASE WHEN $20::jsonb IS NOT NULL THEN jsonb_build_object('favoriteFolders', $20::jsonb) ELSE '{}'::jsonb END
     WHERE id = $1
   `, [req.session.userId, theme ?? null, font ?? null, layout ?? null, notificationSound ?? null,
       pageSize ?? null, scrollMode ?? null, syncInterval ?? null,
       blockRemoteImages ?? null, imageWhitelistJson, shortcutsJson, hiddenFoldersJson,
-      language ?? null, threadedView ?? null, plaintextEmail ?? null, hoverQuickActions ?? null, swipeActionsJson]);
+      language ?? null, threadedView ?? null, plaintextEmail ?? null, hoverQuickActions ?? null,
+      swipeActionsJson, expandedAccountsJson, collapsedFoldersJson, favoriteFoldersJson]);
 
   if (syncInterval != null) {
     const ms = parseInt(syncInterval) * 1000;
