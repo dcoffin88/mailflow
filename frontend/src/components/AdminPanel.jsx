@@ -38,11 +38,10 @@ const COLORS = [
 
 // ─── IMAP presets ─────────────────────────────────────────────────────────────
 const PRESETS = {
-  gmail:     { label: 'Gmail',   imap_host: 'imap.gmail.com',        imap_port: 993, smtp_host: 'smtp.gmail.com',        smtp_port: 587 },
-  yahoo:     { label: 'Yahoo',   imap_host: 'imap.mail.yahoo.com',   imap_port: 993, smtp_host: 'smtp.mail.yahoo.com',   smtp_port: 587 },
-  icloud:    { label: 'iCloud',  imap_host: 'imap.mail.me.com',      imap_port: 993, smtp_host: 'smtp.mail.me.com',      smtp_port: 587 },
-  microsoft: { label: 'Outlook', oauth: true },
-  custom:    { label: 'Custom' },
+  gmail:   { label: 'Gmail',   imap_host: 'imap.gmail.com',        imap_port: 993, smtp_host: 'smtp.gmail.com',        smtp_port: 587 },
+  yahoo:   { label: 'Yahoo',   imap_host: 'imap.mail.yahoo.com',   imap_port: 993, smtp_host: 'smtp.mail.yahoo.com',   smtp_port: 587 },
+  icloud:  { label: 'iCloud',  imap_host: 'imap.mail.me.com',      imap_port: 993, smtp_host: 'smtp.mail.me.com',      smtp_port: 587 },
+  custom:  { label: 'Custom' },
 };
 
 // ─── Account Form (Add or Edit) ───────────────────────────────────────────────
@@ -69,7 +68,6 @@ function AccountForm({ initial, onSave, onCancel }) {
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
   const handlePreset = (key) => {
-    if (key === 'microsoft') { setAdminTab('integrations'); onCancel(); return; }
     const p = PRESETS[key];
     if (p.imap_host) setForm(f => ({ ...f, ...p, label: undefined }));
     setSelectedPreset(key);
@@ -101,7 +99,7 @@ function AccountForm({ initial, onSave, onCancel }) {
         <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
           {Object.entries(PRESETS).map(([key, p]) => {
             const active = selectedPreset === key;
-            const presetLabel = key === 'gmail' ? t('admin.accounts.presetGmail') : key === 'yahoo' ? t('admin.accounts.presetYahoo') : key === 'icloud' ? t('admin.accounts.presetIcloud') : key === 'microsoft' ? t('admin.accounts.presetMicrosoft') : t('admin.accounts.presetCustom');
+            const presetLabel = key === 'gmail' ? t('admin.accounts.presetGmail') : key === 'yahoo' ? t('admin.accounts.presetYahoo') : key === 'icloud' ? t('admin.accounts.presetIcloud') : t('admin.accounts.presetCustom');
             return (
               <button key={key} onClick={() => handlePreset(key)} style={{
                 padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 500,
@@ -208,23 +206,16 @@ function AccountForm({ initial, onSave, onCancel }) {
         <div style={{
           display: 'flex', alignItems: 'flex-start', gap: 10,
           padding: '10px 14px', marginTop: 10,
-          background: 'rgba(251,191,36,0.08)',
-          border: '1px solid rgba(251,191,36,0.35)',
+          background: 'rgba(248,113,113,0.07)',
+          border: '1px solid rgba(248,113,113,0.3)',
           borderRadius: 8, fontSize: 13, color: 'var(--text-primary)',
         }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(251,191,36,0.9)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
-            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
           </svg>
           <div>
-            <div style={{ fontWeight: 600, marginBottom: 3 }}>{t('admin.accounts.microsoftOAuthRequired')}</div>
-            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>{t('admin.accounts.microsoftOAuthNote')}</div>
-            <button onClick={() => { setAdminTab('integrations'); onCancel(); }} style={{
-              marginTop: 8, padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 500,
-              background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.4)',
-              color: 'var(--text-primary)', cursor: 'pointer',
-            }}>
-              {t('admin.accounts.microsoftGoToIntegrations')}
-            </button>
+            <div style={{ fontWeight: 600, marginBottom: 3 }}>{t('admin.accounts.microsoftImapUnsupported')}</div>
+            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>{t('admin.accounts.microsoftImapNote')}</div>
           </div>
         </div>
       )}
