@@ -31,7 +31,16 @@ export default function MailApp() {
     unreadCounts, selectedAccountId, openCompose, setSelectedAccount,
     shortcuts, selectedMessageId, setSelectedMessage,
     mobileSidebarOpen, setMobileSidebarOpen, addNotification,
+    fontSize,
   } = useStore();
+
+  const scale = fontSize / 100;
+  const [vpSize, setVpSize] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    const update = () => setVpSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -262,7 +271,19 @@ export default function MailApp() {
 
   return (
     <div style={{
-      display: 'flex', height: 'var(--app-height, 100svh)', overflow: 'hidden',
+      width: '100vw', height: 'var(--app-height, 100svh)',
+      overflow: 'hidden', background: 'var(--bg-primary)',
+    }}>
+    <div style={{
+      display: 'flex',
+      width: scale !== 1 ? `${(vpSize.w / scale).toFixed(2)}px` : '100%',
+      height: scale !== 1 ? `${(vpSize.h / scale).toFixed(2)}px` : '100%',
+      ...(scale !== 1 && {
+        transform: `scale(${scale})`,
+        transformOrigin: 'top left',
+        '--app-height': `${(vpSize.h / scale).toFixed(2)}px`,
+      }),
+      overflow: 'hidden',
       background: 'var(--bg-primary)',
     }}>
       {isMobile ? (
@@ -337,6 +358,7 @@ export default function MailApp() {
           onClose={() => setShowShortcutHelp(false)}
         />
       )}
+    </div>
     </div>
   );
 }
