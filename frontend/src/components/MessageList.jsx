@@ -1082,6 +1082,33 @@ export default function MessageList() {
     });
   }, [removeMessage, decrementUnread, incrementUnread, addNotification, t]);
 
+  const handleBulkMarkRead = useCallback(async (ids, msgs) => {
+    const markAsRead = msgs.some(m => !m.is_read);
+    // Compute per-account unread deltas before mutating state
+    const deltaByAccount = {};
+    msgs.forEach(msg => {
+      if (!deltaByAccount[msg.account_id]) deltaByAccount[msg.account_id] = 0;
+      if (markAsRead && !msg.is_read) deltaByAccount[msg.account_id]++;
+      if (!markAsRead && msg.is_read) deltaByAccount[msg.account_id]++;
+    });
+    // Optimistic update
+    msgs.forEach(msg => updateMessage(msg.id, { is_read: markAsRead, unread_count: markAsRead ? 0 : 1 }));
+    Object.entries(deltaByAccount).forEach(([accountId, delta]) => {
+      if (delta > 0) markAsRead ? decrementUnread(accountId, delta) : incrementUnread(accountId, delta);
+    });
+    setSelectedIds(new Set());
+    setSelectionModeActive(false);
+    try {
+      await api.bulkRead(ids, markAsRead);
+    } catch (err) {
+      console.error('Bulk mark read failed:', err);
+      msgs.forEach(msg => updateMessage(msg.id, { is_read: msg.is_read, unread_count: msg.unread_count }));
+      Object.entries(deltaByAccount).forEach(([accountId, delta]) => {
+        if (delta > 0) markAsRead ? incrementUnread(accountId, delta) : decrementUnread(accountId, delta);
+      });
+    }
+  }, [updateMessage, decrementUnread, incrementUnread, addNotification, t]);
+
   // Keep refs to bulk handlers so the shortcut effect (registered once) is never stale
   const bulkDeleteRef    = useRef(handleBulkDelete);
   const bulkArchiveRef   = useRef(handleBulkArchive);
@@ -1567,6 +1594,7 @@ export default function MessageList() {
   const allSelected = displayMessages.length > 0 && selectedIds.size === displayMessages.length;
   const selectedAccountIds = [...new Set(selectedMsgs.map(m => m.account_id))];
   const canMove = selectedAccountIds.length === 1;
+  const bulkMarkAsRead = selectedMsgs.some(m => !m.is_read);
 
   return (
     <div style={{
@@ -2223,6 +2251,26 @@ export default function MessageList() {
             <span style={{ fontSize: 12, color: 'var(--text-secondary)', flex: 1, userSelect: 'none' }}>
               {t('messageList.selectedCount', { count: selectedCount })}
             </span>
+
+            {/* Mark read / unread button */}
+            <BulkBtn
+              title={bulkMarkAsRead ? t('messageList.markReadSelected') : t('messageList.markUnreadSelected')}
+              onClick={() => handleBulkMarkRead([...selectedIds], selectedMsgs)}
+            >
+              {bulkMarkAsRead ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" d="M22,9v9c0,1.1-.9,2-2,2H4c-1.1,0-2-.9-2-2v-9"/>
+                  <polyline points="22 9 12 16 2 9"/>
+                  <polyline points="2 9 12 2 22 9"/>
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" d="M22,10.91v7.09c0,1.1-.9,2-2,2H4c-1.1,0-2-.9-2-2V6c0-1.1.9-2,2-2h11"/>
+                  <polyline strokeLinecap="round" points="16.36 9.95 12 13 2 6"/>
+                  <circle cx="19.96" cy="6" r="3" fill="var(--accent)" stroke="var(--accent)"/>
+                </svg>
+              )}
+            </BulkBtn>
 
             {/* Archive button */}
             <BulkBtn

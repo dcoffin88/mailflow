@@ -122,6 +122,8 @@
     "messagesPerPage": "Messaggi per pagina",
     "selectAll": "Seleziona tutto",
     "deselectAll": "Deseleziona tutto",
+    "markReadSelected": "Segna come letto",
+    "markUnreadSelected": "Segna come non letto",
     "archiveSelected": "Archivia selezionati",
     "swipeStar": "Aggiungi stella",
     "swipeUnstar": "Rimuovi stella",

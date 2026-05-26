@@ -122,6 +122,8 @@
     "messagesPerPage": "每页邮件数",
     "selectAll": "全选",
     "deselectAll": "取消全选",
+    "markReadSelected": "标为已读",
+    "markUnreadSelected": "标为未读",
     "archiveSelected": "归档所选",
     "swipeStar": "标星",
     "swipeUnstar": "取消标星",

@@ -122,6 +122,8 @@
     "messagesPerPage": "Messages par page",
     "selectAll": "Tout sélectionner",
     "deselectAll": "Tout désélectionner",
+    "markReadSelected": "Marquer comme lu",
+    "markUnreadSelected": "Marquer comme non lu",
     "archiveSelected": "Archiver la sélection",
     "swipeStar": "Étoiler",
     "swipeUnstar": "Retirer l'étoile",

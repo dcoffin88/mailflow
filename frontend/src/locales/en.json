@@ -124,6 +124,8 @@
     "messagesPerPage": "Messages per page",
     "selectAll": "Select all",
     "deselectAll": "Deselect all",
+    "markReadSelected": "Mark as read",
+    "markUnreadSelected": "Mark as unread",
     "archiveSelected": "Archive selected",
     "swipeStar": "Star",
     "swipeUnstar": "Unstar",
