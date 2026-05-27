@@ -4,14 +4,7 @@ on:
   push:
     tags:
       - 'v*.*.*'
-  release:
-    types:
-      - published
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Release tag/version to build, for example v1.2.3"
-        required: true
 
 permissions:
   contents: write
