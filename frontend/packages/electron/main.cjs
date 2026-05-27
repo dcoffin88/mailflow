@@ -1,5 +1,5 @@
 const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, shell, dialog } = require('electron');
-const { spawn } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const https = require('https');
 const path = require('path');
@@ -183,6 +183,40 @@ function getLinuxDistributionIds() {
   }
 }
 
+function getInstalledLinuxPackageType() {
+  if (process.platform !== 'linux') return null;
+  if (process.env.APPIMAGE) return 'appimage';
+
+  try {
+    const packageType = fs.readFileSync(path.join(process.resourcesPath, 'package-type'), 'utf8').trim().toLowerCase();
+    if (['deb', 'rpm', 'appimage'].includes(packageType)) return packageType;
+  } catch {}
+
+  return null;
+}
+
+function getLinuxPackageManagerVersion(packageType) {
+  if (process.platform !== 'linux' || !['deb', 'rpm'].includes(packageType)) return null;
+
+  const packageNames = ['MailFlow', 'mailflow', 'mailflow-frontend'];
+  for (const packageName of packageNames) {
+    try {
+      const args = packageType === 'rpm'
+        ? ['-q', '--qf', '%{VERSION}', packageName]
+        : ['-W', '-f=${Version}', packageName];
+      const command = packageType === 'rpm' ? 'rpm' : 'dpkg-query';
+      const output = execFileSync(command, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+      if (output) return output;
+    } catch {}
+  }
+
+  return null;
+}
+
+function getInstalledAppVersion(packageType = getInstalledLinuxPackageType()) {
+  return getLinuxPackageManagerVersion(packageType) || app.getVersion();
+}
+
 function getLinuxPackagePatternGroups() {
   const arch = process.arch === 'arm64'
     ? '(?:arm64|aarch64)'
@@ -191,7 +225,10 @@ function getLinuxPackagePatternGroups() {
   const deb = [new RegExp(`${arch}\\.deb$`, 'i'), /\.deb$/i];
   const rpm = [new RegExp(`${arch}\\.rpm$`, 'i'), /\.rpm$/i];
 
-  if (process.env.APPIMAGE) return [appImage, deb, rpm];
+  const installedPackageType = getInstalledLinuxPackageType();
+  if (installedPackageType === 'appimage') return [appImage, deb, rpm];
+  if (installedPackageType === 'deb') return [deb, appImage, rpm];
+  if (installedPackageType === 'rpm') return [rpm, appImage, deb];
 
   const distroIds = getLinuxDistributionIds();
   if (distroIds.some((id) => ['debian', 'ubuntu', 'linuxmint', 'pop'].includes(id))) {
@@ -504,9 +541,11 @@ async function checkForUpdates(verbose = false) {
   try {
     const release = await requestJson(UPDATE_RELEASE_URL);
     const releaseVersion = release.tag_name || release.name;
+    const installedPackageType = getInstalledLinuxPackageType();
+    const installedVersion = getInstalledAppVersion(installedPackageType);
     const asset = getUpdateAsset(release);
 
-    if (!isNewerVersion(releaseVersion, app.getVersion())) {
+    if (!isNewerVersion(releaseVersion, installedVersion)) {
       notifyUpToDate(verbose);
       return { updateAvailable: false };
     }
