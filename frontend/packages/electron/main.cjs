@@ -175,8 +175,117 @@ function sendUpdateStatus(payload) {
   mainWindow.webContents.send(UPDATE_STATUS_CHANNEL, payload);
 }
 
+function showInAppNotification({ title = '', message = '', type = 'info' }) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+
+  const payload = JSON.stringify({ title, message, type });
+  mainWindow.webContents.executeJavaScript(`
+    (() => {
+      const notification = ${payload};
+      const id = 'mailflow-electron-toasts';
+      let root = document.getElementById(id);
+
+      if (!root) {
+        root = document.createElement('div');
+        root.id = id;
+        root.style.position = 'fixed';
+        root.style.right = '24px';
+        root.style.bottom = '24px';
+        root.style.zIndex = '2147483647';
+        root.style.display = 'flex';
+        root.style.flexDirection = 'column-reverse';
+        root.style.gap = '8px';
+        root.style.pointerEvents = 'none';
+        document.documentElement.appendChild(root);
+      }
+
+      const toast = document.createElement('div');
+      toast.style.width = '340px';
+      toast.style.maxWidth = 'calc(100vw - 48px)';
+      toast.style.boxSizing = 'border-box';
+      toast.style.display = 'flex';
+      toast.style.alignItems = 'flex-start';
+      toast.style.gap = '10px';
+      toast.style.padding = '12px 14px';
+      toast.style.borderRadius = '10px';
+      toast.style.border = '1px solid rgba(255,255,255,0.10)';
+      toast.style.background = 'rgba(36,36,41,0.98)';
+      toast.style.boxShadow = '0 4px 20px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.04)';
+      toast.style.color = '#e8e8ed';
+      toast.style.font = '13px Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+      toast.style.pointerEvents = 'all';
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateX(100%)';
+      toast.style.transition = 'opacity 180ms ease, transform 180ms ease';
+
+      const icon = document.createElement('div');
+      icon.style.width = '32px';
+      icon.style.height = '32px';
+      icon.style.borderRadius = '8px';
+      icon.style.flex = '0 0 auto';
+      icon.style.display = 'grid';
+      icon.style.placeItems = 'center';
+      icon.style.background = notification.type === 'negative' || notification.type === 'error'
+        ? 'rgba(248,113,113,0.15)'
+        : 'rgba(124,106,247,0.28)';
+      icon.style.color = notification.type === 'negative' || notification.type === 'error' ? '#f87171' : '#a99cff';
+      icon.textContent = notification.type === 'positive' ? '✓' : notification.type === 'negative' || notification.type === 'error' ? '!' : 'i';
+
+      const copy = document.createElement('div');
+      copy.style.flex = '1';
+      copy.style.minWidth = '0';
+
+      const heading = document.createElement('div');
+      heading.textContent = notification.title;
+      heading.style.fontWeight = '650';
+      heading.style.marginBottom = '2px';
+      heading.style.whiteSpace = 'nowrap';
+      heading.style.overflow = 'hidden';
+      heading.style.textOverflow = 'ellipsis';
+
+      const body = document.createElement('div');
+      body.textContent = notification.message;
+      body.style.fontSize = '12px';
+      body.style.color = '#9898a8';
+      body.style.whiteSpace = 'nowrap';
+      body.style.overflow = 'hidden';
+      body.style.textOverflow = 'ellipsis';
+
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.setAttribute('aria-label', 'Dismiss');
+      close.textContent = '×';
+      close.style.border = '0';
+      close.style.background = 'transparent';
+      close.style.color = '#9898a8';
+      close.style.cursor = 'pointer';
+      close.style.font = '20px/1 Inter, ui-sans-serif, system-ui';
+      close.style.padding = '0';
+
+      const dismiss = () => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        window.setTimeout(() => toast.remove(), 190);
+      };
+
+      close.addEventListener('click', dismiss);
+      copy.append(heading, body);
+      toast.append(icon, copy, close);
+      root.appendChild(toast);
+
+      window.requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateX(0)';
+      });
+
+      window.setTimeout(dismiss, 5000);
+    })();
+  `).catch(() => {});
+}
+
 function notifyUpdateStatus({ title, message, type = 'info' }) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  showInAppNotification({ title, message, type });
   mainWindow.webContents.send('mailflow:notifications:push', { title, message, type });
 }
 
