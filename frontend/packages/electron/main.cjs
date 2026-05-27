@@ -180,10 +180,10 @@ function sendUpdateStatus(payload) {
   mainWindow.webContents.send(UPDATE_STATUS_CHANNEL, payload);
 }
 
-function showInAppNotification({ title = '', message = '', type = 'info', actionLabel = '', action = '' }) {
+function showInAppNotification({ title = '', message = '', type = 'info', actionLabel = '', action = '', persistent = false }) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  const payload = JSON.stringify({ title, message, type, actionLabel, action });
+  const payload = JSON.stringify({ title, message, type, actionLabel, action, persistent });
   mainWindow.webContents.executeJavaScript(`
     (() => {
       if (window.__mailflowNativeBridgeReady) return;
@@ -309,7 +309,9 @@ function showInAppNotification({ title = '', message = '', type = 'info', action
         toast.style.transform = 'translateX(0)';
       });
 
-      window.setTimeout(dismiss, 5000);
+      if (!notification.persistent) {
+        window.setTimeout(dismiss, 5000);
+      }
     })();
   `).catch(() => {});
 }
@@ -385,6 +387,7 @@ function notifyUpdateDownloaded() {
     type: 'positive',
     actionLabel: 'Install',
     action: 'install-update',
+    persistent: true,
   });
 }
 

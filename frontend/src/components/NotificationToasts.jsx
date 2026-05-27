@@ -149,6 +149,8 @@ function Toast({ notification, onDismiss, isMobile }) {
   };
 
   useEffect(() => {
+    if (notification.persistent) return undefined;
+
     const duration = notification.onUndo ? 6000 : 5000;
     const timer = setTimeout(dismiss, duration);
     return () => clearTimeout(timer);

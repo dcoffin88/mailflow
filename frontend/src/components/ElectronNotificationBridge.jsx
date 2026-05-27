@@ -39,6 +39,7 @@ export default function ElectronNotificationBridge() {
         title: 'Update ready',
         body: 'MailFlow downloaded the update.',
         allowWrap: true,
+        persistent: true,
         actionLabel: 'Install',
         onAction: async () => {
           const result = await window.mailflowNative?.updates?.installDownloaded?.();
