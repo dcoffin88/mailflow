@@ -158,18 +158,66 @@ function isNewerVersion(candidate, current) {
   return false;
 }
 
+function getLinuxDistributionIds() {
+  if (process.platform !== 'linux') return [];
+
+  try {
+    const osRelease = fs.readFileSync('/etc/os-release', 'utf8');
+    const ids = [];
+
+    for (const key of ['ID', 'ID_LIKE']) {
+      const match = osRelease.match(new RegExp(`^${key}=(.+)$`, 'm'));
+      if (!match) continue;
+
+      const values = match[1]
+        .replace(/^"|"$/g, '')
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean);
+      ids.push(...values);
+    }
+
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+function getLinuxPackagePatternGroups() {
+  const arch = process.arch === 'arm64'
+    ? '(?:arm64|aarch64)'
+    : '(?:amd64|x64|x86_64)';
+  const appImage = [/\.appimage$/i];
+  const deb = [new RegExp(`${arch}\\.deb$`, 'i'), /\.deb$/i];
+  const rpm = [new RegExp(`${arch}\\.rpm$`, 'i'), /\.rpm$/i];
+
+  if (process.env.APPIMAGE) return [appImage, deb, rpm];
+
+  const distroIds = getLinuxDistributionIds();
+  if (distroIds.some((id) => ['debian', 'ubuntu', 'linuxmint', 'pop'].includes(id))) {
+    return [deb, appImage, rpm];
+  }
+  if (distroIds.some((id) => ['fedora', 'rhel', 'centos', 'rocky', 'almalinux', 'suse', 'opensuse'].includes(id))) {
+    return [rpm, appImage, deb];
+  }
+
+  return [appImage, deb, rpm];
+}
+
 function getUpdateAsset(release) {
   const assets = Array.isArray(release.assets) ? release.assets : [];
-  const platformAssetPatterns = {
-    win32: [/setup.*\.exe$/i, /\.exe$/i],
-    darwin: [/\.dmg$/i],
-    linux: [/\.appimage$/i, /\.deb$/i, /\.rpm$/i],
+  const platformAssetPatternGroups = {
+    win32: [[/setup.*\.exe$/i], [/\.exe$/i]],
+    darwin: [[/\.dmg$/i]],
+    linux: getLinuxPackagePatternGroups(),
   };
-  const patterns = platformAssetPatterns[process.platform] || [];
+  const patternGroups = platformAssetPatternGroups[process.platform] || [];
 
-  for (const pattern of patterns) {
-    const asset = assets.find((item) => pattern.test(item.name || '') && item.browser_download_url);
-    if (asset) return asset;
+  for (const patterns of patternGroups) {
+    for (const pattern of patterns) {
+      const asset = assets.find((item) => pattern.test(item.name || '') && item.browser_download_url);
+      if (asset) return asset;
+    }
   }
 
   return null;
