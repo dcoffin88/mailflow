@@ -6,6 +6,7 @@ export default function ElectronNotificationBridge() {
   const addNotification = useStore(state => state.addNotification);
   const openCompose = useStore(state => state.openCompose);
   const lastActionRef = useRef({ action: null, time: 0 });
+  const processedActionIdsRef = useRef(new Set());
 
   useEffect(() => {
     const unsubscribe = window.mailflowNative?.notifications?.onPush?.((notification) => {
@@ -50,47 +51,74 @@ export default function ElectronNotificationBridge() {
   }, [addNotification]);
 
   useEffect(() => {
-    const runNativeAction = async (action) => {
+    const runNativeAction = async (payload) => {
+      const action = typeof payload === 'string' ? payload : payload?.action;
+      const id = typeof payload === 'object' ? payload?.id : null;
+
+      if (!action) return;
+      if (id && processedActionIdsRef.current.has(id)) return;
+      if (id) processedActionIdsRef.current.add(id);
+
       const now = Date.now();
       const last = lastActionRef.current;
 
-      if (last.action === action && now - last.time < 500) return;
+      if (!id && last.action === action && now - last.time < 500) return;
       lastActionRef.current = { action, time: now };
 
-      if (action === 'new-mail') {
-        openCompose({});
-        return;
-      }
+      try {
+        if (action === 'new-mail') {
+          openCompose({});
+          return;
+        }
 
-      if (action === 'sync') {
-        try {
-          addNotification({
-            type: 'info',
-            title: 'Sync started',
-            body: 'MailFlow is checking for new mail.',
-          });
-          await api.syncNow();
-        } catch (error) {
-          addNotification({
-            type: 'error',
-            title: 'Sync failed',
-            body: error.message || 'Could not sync mail.',
-          });
+        if (action === 'sync') {
+          try {
+            addNotification({
+              type: 'info',
+              title: 'Sync started',
+              body: 'MailFlow is checking for new mail.',
+            });
+            await api.syncNow();
+          } catch (error) {
+            addNotification({
+              type: 'error',
+              title: 'Sync failed',
+              body: error.message || 'Could not sync mail.',
+            });
+          }
+        }
+      } finally {
+        if (id) {
+          window.mailflowNative?.actions?.ack?.(id);
         }
       }
     };
 
     const handleNativeAction = (event) => {
-      runNativeAction(event.detail?.action);
+      runNativeAction(event.detail);
+    };
+
+    const handleNativeMessage = (event) => {
+      if (event.source !== window) return;
+      if (event.data?.type !== 'mailflow:native-action') return;
+      runNativeAction(event.data.payload);
     };
 
     const unsubscribe = window.mailflowNative?.actions?.onAction?.((payload) => {
-      runNativeAction(payload?.action);
+      runNativeAction(payload);
     });
 
+    window.mailflowNative?.actions?.getPending?.()
+      .then((actions = []) => {
+        actions.forEach(runNativeAction);
+      })
+      .catch(() => {});
+
     window.addEventListener('mailflow:native-action', handleNativeAction);
+    window.addEventListener('message', handleNativeMessage);
     return () => {
       window.removeEventListener('mailflow:native-action', handleNativeAction);
+      window.removeEventListener('message', handleNativeMessage);
       if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, [addNotification, openCompose]);

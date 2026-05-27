@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('mailflowNative', {
     onPush: (callback) => subscribe('mailflow:notifications:push', callback),
   },
   actions: {
+    getPending: () => ipcRenderer.invoke('mailflow:native-actions:pending'),
+    ack: (id) => ipcRenderer.invoke('mailflow:native-actions:ack', id),
     onAction: subscribeNativeAction,
   },
 });

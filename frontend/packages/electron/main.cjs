@@ -17,6 +17,8 @@ let isQuitting = false;
 let updateInfo = null;
 let downloadedUpdate = null;
 let updateDownloadsInitialized = false;
+let nextNativeActionId = 1;
+const pendingNativeActions = new Map();
 
 app.setName('MailFlow');
 if (process.platform === 'win32') {
@@ -525,20 +527,36 @@ function parseNativeActionArg(args = []) {
   return null;
 }
 
+function createNativeActionPayload(action) {
+  const payload = {
+    id: nextNativeActionId,
+    action,
+    createdAt: Date.now(),
+  };
+  nextNativeActionId += 1;
+  pendingNativeActions.set(payload.id, payload);
+  return payload;
+}
+
 function sendNativeAction(action) {
   if (!action) return;
 
+  const payload = createNativeActionPayload(action);
   showMainWindow();
 
   const dispatchScript = `
     window.dispatchEvent(new CustomEvent('mailflow:native-action', {
-      detail: ${JSON.stringify({ action })}
+      detail: ${JSON.stringify(payload)}
     }));
+    window.postMessage({
+      type: 'mailflow:native-action',
+      payload: ${JSON.stringify(payload)}
+    }, '*');
   `;
 
   const send = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    mainWindow.webContents.send(NATIVE_ACTION_CHANNEL, { action });
+    mainWindow.webContents.send(NATIVE_ACTION_CHANNEL, payload);
     mainWindow.webContents.executeJavaScript(dispatchScript).catch(() => {});
   };
 
@@ -974,6 +992,14 @@ ipcMain.handle('mailflow:updates:install-auto', () => {
 
 ipcMain.handle('mailflow:updates:open-download', () => {
   openDownloadedUpdatePath();
+});
+
+ipcMain.handle('mailflow:native-actions:pending', () => {
+  return Array.from(pendingNativeActions.values());
+});
+
+ipcMain.handle('mailflow:native-actions:ack', (_event, id) => {
+  pendingNativeActions.delete(id);
 });
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
