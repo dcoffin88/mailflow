@@ -32,6 +32,11 @@ function updateJsonVersion(filePath, version) {
 
 const version = normalizeVersion(requestedVersion);
 if (!version) {
+  if (requestedVersion) {
+    console.error(`Invalid release tag version "${requestedVersion}". Expected a semver tag like v1.2.3.`);
+    process.exit(1);
+  }
+
   console.log('No release tag version detected; keeping package versions unchanged.');
   process.exit(0);
 }

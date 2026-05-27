@@ -4,7 +4,14 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  release:
+    types:
+      - published
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release tag/version to build, for example v1.2.3"
+        required: true
 
 permissions:
   contents: write
@@ -35,9 +42,20 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Resolve app version
+        id: app-version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${RELEASE_TAG:-${DISPATCH_VERSION:-$REF_NAME}}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Set app version
         working-directory: frontend
-        run: npm run app:version -- "${{ github.ref_name }}" "${{ github.run_number }}"
+        run: npm run app:version -- "${{ steps.app-version.outputs.version }}" "${{ github.run_number }}"
 
       - name: Build Electron package
         if: matrix.os != 'ubuntu-latest'
@@ -101,9 +119,20 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Resolve app version
+        id: app-version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${RELEASE_TAG:-${DISPATCH_VERSION:-$REF_NAME}}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Set app version
         working-directory: frontend
-        run: npm run app:version -- "${{ github.ref_name }}" "${{ github.run_number }}"
+        run: npm run app:version -- "${{ steps.app-version.outputs.version }}" "${{ github.run_number }}"
 
       - name: Build Android package
         working-directory: frontend
@@ -126,10 +155,21 @@ jobs:
     needs:
       - desktop
       - android
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
+      - name: Resolve app version
+        id: app-version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          VERSION="${RELEASE_TAG:-${DISPATCH_VERSION:-$REF_NAME}}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -138,6 +178,7 @@ jobs:
       - name: Publish release files
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.app-version.outputs.version }}
           files: |
             artifacts/**/*.AppImage
             artifacts/**/*.apk
