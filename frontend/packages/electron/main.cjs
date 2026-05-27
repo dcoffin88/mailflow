@@ -445,7 +445,7 @@ async function checkForUpdates(verbose = false) {
     }
 
     if (!asset) {
-      notifyUpdateError('Update is available, no installer was found.');
+      notifyUpdateError('A MailFlow update is available, but no installer was found for this platform.');
       return { updateAvailable: true, downloadAvailable: false };
     }
 
