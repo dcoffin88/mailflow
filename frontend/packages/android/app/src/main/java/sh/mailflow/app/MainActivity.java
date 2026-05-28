@@ -13,6 +13,10 @@ public class MainActivity extends BridgeActivity {
 
         if (bridge != null) {
             bridge.setWebViewClient(new MailFlowWebViewClient(bridge, this));
+            String savedHost = MailFlowNativePlugin.getSavedHost(this);
+            if (savedHost != null) {
+                bridge.getWebView().post(() -> bridge.getWebView().loadUrl(savedHost));
+            }
         }
     }
 

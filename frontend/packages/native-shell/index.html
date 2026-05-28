@@ -33,6 +33,10 @@
         width: min(100%, 440px);
       }
 
+      body.setup-pending main {
+        visibility: hidden;
+      }
+
       h1 {
         margin: 0 0 10px;
         font-size: 28px;
@@ -98,7 +102,7 @@
       }
     </style>
   </head>
-  <body>
+  <body class="setup-pending">
     <main>
       <h1>Connect MailFlow</h1>
       <p>Enter the host for your MailFlow server.</p>
@@ -164,17 +168,23 @@
         window.location.replace(host);
       }
 
+      function showSetup() {
+        document.body.classList.remove('setup-pending');
+      }
+
       async function restoreHost() {
         installCapacitorNativeBridge();
 
         if (window.mailflowNative) {
           const host = await window.mailflowNative.getHost();
           if (host) loadHost(host);
+          else showSetup();
           return;
         }
 
         const host = localStorage.getItem(STORAGE_KEY);
         if (host) loadHost(host);
+        else showSetup();
       }
 
       form.addEventListener('submit', async (event) => {
@@ -198,7 +208,7 @@
         }
       });
 
-      restoreHost().catch(() => {});
+      restoreHost().catch(() => showSetup());
     </script>
   </body>
 </html>
