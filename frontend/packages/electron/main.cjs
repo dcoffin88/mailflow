@@ -575,6 +575,37 @@ function setDownloadProgress(window, value) {
   }
 }
 
+function getLinuxTerminalCommand() {
+  return getAvailableCommand([
+    'ptyxis',
+    'kgx',
+    'gnome-terminal',
+    'konsole',
+    'xterm',
+    'x-terminal-emulator',
+  ]);
+}
+
+function getTerminalArgs(terminal, command, args = []) {
+  const shellCommand = ['sh', '-lc', 'exec "$@"', 'mailflow-installer', command, ...args];
+  if (['ptyxis', 'kgx', 'gnome-terminal'].includes(terminal)) return ['--', ...shellCommand];
+  return ['-e', ...shellCommand];
+}
+
+function launchTerminalCommand(command, args = []) {
+  const terminal = getLinuxTerminalCommand();
+  if (!terminal) {
+    throw new Error('No supported terminal was found.');
+  }
+
+  const child = spawn(terminal, getTerminalArgs(terminal, command, args), {
+    detached: true,
+    stdio: 'ignore',
+  });
+
+  child.unref();
+}
+
 function initializeUpdateDownloads(window) {
   if (updateDownloadsInitialized) return;
   updateDownloadsInitialized = true;
@@ -661,38 +692,18 @@ function launchDownloadedUpdate(updatePath) {
   }
 
   if (process.platform === 'linux' && /\.deb$/i.test(updatePath)) {
-    const terminal = getAvailableCommand(['x-terminal-emulator', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'mate-terminal', 'xterm']);
-    if (terminal) {
-      const terminalArgs = terminal === 'gnome-terminal'
-        ? ['--', 'sudo', 'dpkg', '--install', updatePath]
-        : ['-e', 'sudo', 'dpkg', '--install', updatePath];
-
-      const child = spawn(terminal, terminalArgs, {
-        detached: true,
-        stdio: 'ignore',
-      });
-
-      child.unref();
-      return Promise.resolve();
-    }
+    launchTerminalCommand('sudo', ['dpkg', '--install', updatePath]);
+    return Promise.resolve();
   }
 
   if (process.platform === 'linux' && /\.rpm$/i.test(updatePath)) {
-    const terminal = getAvailableCommand(['x-terminal-emulator', 'gnome-terminal', 'konsole', 'xfce4-terminal', 'mate-terminal', 'xterm']);
     const packageInstaller = getAvailableCommand(['dnf', 'dnf5', 'yum']);
-    if (terminal && packageInstaller) {
-      const terminalArgs = terminal === 'gnome-terminal'
-        ? ['--', 'sudo', packageInstaller, 'install', updatePath]
-        : ['-e', 'sudo', packageInstaller, 'install', updatePath];
-
-      const child = spawn(terminal, terminalArgs, {
-        detached: true,
-        stdio: 'ignore',
-      });
-
-      child.unref();
-      return Promise.resolve();
+    if (!packageInstaller) {
+      throw new Error('No RPM package installer was found.');
     }
+
+    launchTerminalCommand('sudo', [packageInstaller, 'install', updatePath]);
+    return Promise.resolve();
   }
 
   return shell.openPath(updatePath).then((error) => {
