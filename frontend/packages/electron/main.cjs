@@ -16,6 +16,7 @@ const REWRITE_ERROR_PATTERNS = [
   /Rewrite\s+502\s+Bad\s+Gateway\s+Page/i,
   /Rewrite\s+404\s+Error\s+Page/i,
 ];
+const HOST_UNAVAILABLE_STATUS_CODES = new Set([404, 502, 503, 504]);
 const LINUX_BADGE_DESKTOP_IDS = [
   'MailFlow.desktop',
   'mailflow.desktop',
@@ -1331,6 +1332,18 @@ function createWindow() {
     const host = readHost();
     if (!host || !String(validatedURL || '').startsWith(host)) return;
     loadHostUnavailable();
+  });
+
+  mainWindow.webContents.session.webRequest.onCompleted((details) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (details.webContentsId !== mainWindow.webContents.id) return;
+    if (details.resourceType !== 'mainFrame') return;
+    if (!HOST_UNAVAILABLE_STATUS_CODES.has(details.statusCode)) return;
+
+    const host = readHost();
+    if (!host || !String(details.url || '').startsWith(host)) return;
+
+    setTimeout(() => loadHostUnavailable(), 0);
   });
 
   mainWindow.webContents.on('did-finish-load', () => {
