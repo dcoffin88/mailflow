@@ -127,6 +127,23 @@
       const button = document.querySelector('#submit-button');
       const error = document.querySelector('#error');
 
+      function installCapacitorNativeBridge() {
+        const plugin = window.Capacitor?.Plugins?.MailFlowNative;
+        if (!plugin || window.mailflowNative) return;
+
+        window.mailflowNative = {
+          getHost: async () => {
+            const result = await plugin.getHost();
+            return result?.host || null;
+          },
+          saveHost: async (host) => {
+            const result = await plugin.saveHost({ host });
+            return result?.host || host;
+          },
+          resetHost: async () => plugin.resetHost(),
+        };
+      }
+
       function normalizeHost(value) {
         const url = new URL(String(value || '').trim());
 
@@ -148,6 +165,8 @@
       }
 
       async function restoreHost() {
+        installCapacitorNativeBridge();
+
         if (window.mailflowNative) {
           const host = await window.mailflowNative.getHost();
           if (host) loadHost(host);

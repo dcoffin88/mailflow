@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store/index.js';
 import { api } from '../utils/api.js';
+import { installCapacitorNativeBridge } from '../utils/capacitorNativeBridge.js';
 
 export default function ElectronNotificationBridge() {
+  installCapacitorNativeBridge();
+
   const addNotification = useStore(state => state.addNotification);
   const openCompose = useStore(state => state.openCompose);
   const setSelectedAccount = useStore(state => state.setSelectedAccount);
@@ -24,6 +27,10 @@ export default function ElectronNotificationBridge() {
   useEffect(() => {
     window.mailflowNative?.badges?.setUnreadCount?.(totalUnread || 0);
   }, [totalUnread]);
+
+  useEffect(() => {
+    window.mailflowNative?.notifications?.requestPermission?.().catch(() => {});
+  }, []);
 
   useEffect(() => {
     const showNewMail = window.mailflowNative?.notifications?.showNewMail;

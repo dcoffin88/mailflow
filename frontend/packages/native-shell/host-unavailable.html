@@ -82,10 +82,20 @@
     <script>
       const button = document.querySelector('#change-host-button');
 
+      function installCapacitorNativeBridge() {
+        const plugin = window.Capacitor?.Plugins?.MailFlowNative;
+        if (!plugin || window.mailflowNative) return;
+
+        window.mailflowNative = {
+          resetHost: async () => plugin.resetHost(),
+        };
+      }
+
       button.addEventListener('click', async () => {
         button.disabled = true;
 
         try {
+          installCapacitorNativeBridge();
           await window.mailflowNative?.resetHost?.();
         } catch {
           button.disabled = false;
