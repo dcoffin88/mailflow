@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, Menu, Tray, nativeImage, ipcMain, shell, dialog, Notification } = require('electron');
 const { execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const https = require('https');
@@ -10,6 +10,7 @@ const UPDATE_RELEASE_URL = 'https://api.github.com/repos/dcoffin88/mailflow/rele
 const UPDATE_ERROR_MESSAGE = 'Could not check for MailFlow updates. Please visit the website instead.';
 const NATIVE_ACTION_CHANNEL = 'mailflow:native-action';
 const NATIVE_ACTION_ARG = '--mailflow-action=';
+const NEW_MAIL_NOTIFICATION_MAX_LENGTH = 240;
 const LINUX_BADGE_DESKTOP_IDS = [
   'MailFlow.desktop',
   'mailflow.desktop',
@@ -481,6 +482,37 @@ function notifyUpdateStatus({ title, message, type = 'info' }) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   showInAppNotification({ title, message, type });
   mainWindow.webContents.send('mailflow:notifications:push', { title, message, type });
+}
+
+function cleanNotificationText(value, fallback = '') {
+  const text = String(value || fallback)
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (text.length <= NEW_MAIL_NOTIFICATION_MAX_LENGTH) return text;
+  return `${text.slice(0, NEW_MAIL_NOTIFICATION_MAX_LENGTH - 1)}…`;
+}
+
+function showNewMailNotification({ title, body, count } = {}) {
+  if (!Notification.isSupported()) {
+    return { shown: false, reason: 'unsupported' };
+  }
+
+  const normalizedTitle = cleanNotificationText(title, 'New mail');
+  const normalizedBody = cleanNotificationText(body, 'No subject');
+  const notification = new Notification({
+    title: normalizedTitle,
+    body: count > 1 ? `${normalizedBody}\n${count} new messages` : normalizedBody,
+    icon: getIconPath(),
+    silent: true,
+  });
+
+  notification.on('click', () => {
+    showMainWindow({ reload: true });
+  });
+  notification.show();
+
+  return { shown: true };
 }
 
 function notifyCheckingUpdate(verbose) {
@@ -1226,6 +1258,10 @@ ipcMain.handle('mailflow:resetHost', () => {
 ipcMain.handle('mailflow:badge:set-unread-count', (_event, count) => {
   const unreadCount = Math.max(0, Number.parseInt(count, 10) || 0);
   return setUnreadBadgeCount(unreadCount);
+});
+
+ipcMain.handle('mailflow:notification:new-mail', (_event, notification) => {
+  return showNewMailNotification(notification);
 });
 
 ipcMain.handle('mailflow:updates:check', async (_event, { verbose } = {}) => {

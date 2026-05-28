@@ -8,6 +8,7 @@ export default function ElectronNotificationBridge() {
   const totalUnread = useStore(state => state.unreadCounts.total);
   const lastActionRef = useRef({ action: null, time: 0 });
   const processedActionIdsRef = useRef(new Set());
+  const forwardedNotificationIdsRef = useRef(new Set());
 
   useEffect(() => {
     window.__mailflowNativeBridgeReady = true;
@@ -20,6 +21,30 @@ export default function ElectronNotificationBridge() {
   useEffect(() => {
     window.mailflowNative?.badges?.setUnreadCount?.(totalUnread || 0);
   }, [totalUnread]);
+
+  useEffect(() => {
+    const showNewMail = window.mailflowNative?.notifications?.showNewMail;
+    if (typeof showNewMail !== 'function') return undefined;
+
+    useStore.getState().notifications.forEach((notification) => {
+      if (notification?.id) forwardedNotificationIdsRef.current.add(notification.id);
+    });
+
+    return useStore.subscribe((state) => {
+      for (const notification of state.notifications) {
+        if (notification?.type !== 'new_mail' || !notification.id) continue;
+        if (forwardedNotificationIdsRef.current.has(notification.id)) continue;
+
+        forwardedNotificationIdsRef.current.add(notification.id);
+        showNewMail({
+          title: notification.title,
+          body: notification.body,
+          count: notification.count,
+          accountId: notification.accountId,
+        }).catch(() => {});
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const unsubscribe = window.mailflowNative?.notifications?.onPush?.((notification) => {
