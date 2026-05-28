@@ -46,6 +46,12 @@ function _applyServerCounts(counts) {
   }
 }
 
+function _emitNativeNewMailNotification(notification) {
+  window.dispatchEvent(new CustomEvent('mailflow:new-mail-notification', {
+    detail: notification,
+  }));
+}
+
 // Auth-related close codes that should not trigger reconnect
 const NO_RECONNECT_CODES = new Set([4001, 4003]);
 
@@ -111,19 +117,25 @@ export function useWebSocket() {
         const isInbox = !folder || folder === 'INBOX';
 
         if (messages && messages.length > 0) {
-          // In-app notifications and sounds are inbox-only — non-inbox folder syncs
-          // (Archive, Spam, on-demand syncs) should not trigger alerts for old mail.
-         if (isInbox && document.visibilityState === 'visible') {
+          // New-mail alerts are inbox-only — non-inbox folder syncs (Archive,
+          // Spam, on-demand syncs) should not trigger alerts for old mail.
+          if (isInbox) {
             const latest = messages[0];
-            addNotification({
+            const notification = {
               type: 'new_mail',
               accountId,
               title: latest.fromName || latest.fromEmail || t('notifications.newMessage'),
               body: latest.subject || t('common.noSubject'),
               count,
-            });
-            const { notificationSound, customSoundDataUrl } = useStore.getState();
-            playNotificationSound(notificationSound, customSoundDataUrl);
+            };
+
+            if (document.visibilityState === 'visible') {
+              addNotification(notification);
+              const { notificationSound, customSoundDataUrl } = useStore.getState();
+              playNotificationSound(notificationSound, customSoundDataUrl);
+            } else {
+              _emitNativeNewMailNotification(notification);
+            }
           }
 
           // Refresh the message list when the affected folder is visible

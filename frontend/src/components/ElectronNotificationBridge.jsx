@@ -26,24 +26,38 @@ export default function ElectronNotificationBridge() {
     const showNewMail = window.mailflowNative?.notifications?.showNewMail;
     if (typeof showNewMail !== 'function') return undefined;
 
+    const forwardNewMail = (notification) => {
+      showNewMail({
+        title: notification.title,
+        body: notification.body,
+        count: notification.count,
+        accountId: notification.accountId,
+      }).catch(() => {});
+    };
+
+    const handleHiddenNewMail = (event) => {
+      forwardNewMail(event.detail || {});
+    };
+
     useStore.getState().notifications.forEach((notification) => {
       if (notification?.id) forwardedNotificationIdsRef.current.add(notification.id);
     });
 
-    return useStore.subscribe((state) => {
+    const unsubscribe = useStore.subscribe((state) => {
       for (const notification of state.notifications) {
         if (notification?.type !== 'new_mail' || !notification.id) continue;
         if (forwardedNotificationIdsRef.current.has(notification.id)) continue;
 
         forwardedNotificationIdsRef.current.add(notification.id);
-        showNewMail({
-          title: notification.title,
-          body: notification.body,
-          count: notification.count,
-          accountId: notification.accountId,
-        }).catch(() => {});
+        forwardNewMail(notification);
       }
     });
+
+    window.addEventListener('mailflow:new-mail-notification', handleHiddenNewMail);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('mailflow:new-mail-notification', handleHiddenNewMail);
+    };
   }, []);
 
   useEffect(() => {
