@@ -16,6 +16,9 @@ import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -29,7 +32,12 @@ import java.util.Set;
 import java.util.UUID;
 import org.json.JSONException;
 
-@CapacitorPlugin(name = "MailFlowNative")
+@CapacitorPlugin(
+    name = "MailFlowNative",
+    permissions = {
+        @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS })
+    }
+)
 public class MailFlowNativePlugin extends Plugin {
     static final String ACTION_OPEN_MESSAGE = "sh.mailflow.app.OPEN_MESSAGE";
     private static final String CHANNEL_NEW_MAIL = "mailflow_new_mail";
@@ -84,8 +92,17 @@ public class MailFlowNativePlugin extends Plugin {
 
     @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
-        requestNotificationPermissionIfNeeded();
-        call.resolve();
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || hasNotificationPermission()) {
+            call.resolve(notificationPermissionResult("granted"));
+            return;
+        }
+
+        requestPermissionForAlias("notifications", call, "notificationPermissionCallback");
+    }
+
+    @PluginMethod
+    public void checkNotificationPermission(PluginCall call) {
+        call.resolve(notificationPermissionResult(getNotificationPermissionState()));
     }
 
     @PluginMethod
@@ -311,12 +328,37 @@ public class MailFlowNativePlugin extends Plugin {
     }
 
     private void requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(
-                getContext(),
-                Manifest.permission.POST_NOTIFICATIONS
-            ) != PackageManager.PERMISSION_GRANTED) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission()) {
             ActivityCompat.requestPermissions(getActivity(), new String[] { Manifest.permission.POST_NOTIFICATIONS }, 4901);
         }
+    }
+
+    @PermissionCallback
+    private void notificationPermissionCallback(PluginCall call) {
+        call.resolve(notificationPermissionResult(getNotificationPermissionState()));
+    }
+
+    private boolean hasNotificationPermission() {
+        return ContextCompat.checkSelfPermission(
+            getContext(),
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private String getNotificationPermissionState() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || hasNotificationPermission()) {
+            return "granted";
+        }
+
+        PermissionState state = getPermissionState("notifications");
+        if (state == PermissionState.DENIED) return "denied";
+        return "default";
+    }
+
+    private JSObject notificationPermissionResult(String permission) {
+        JSObject result = new JSObject();
+        result.put("permission", permission);
+        return result;
     }
 
     private static void putExtra(Intent intent, String key, String value) {

@@ -28,7 +28,14 @@ export function installCapacitorNativeBridge() {
       setUnreadCount: async (count) => MailFlowNative.setUnreadCount({ count }),
     },
     notifications: {
-      requestPermission: async () => MailFlowNative.requestNotificationPermission(),
+      checkPermission: async () => {
+        const result = await MailFlowNative.checkNotificationPermission();
+        return result?.permission || 'default';
+      },
+      requestPermission: async () => {
+        const result = await MailFlowNative.requestNotificationPermission();
+        return result?.permission || 'default';
+      },
       showNewMail: async (notification) => MailFlowNative.showNewMail(notification || {}),
     },
     actions: {
