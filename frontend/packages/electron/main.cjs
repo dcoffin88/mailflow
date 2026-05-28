@@ -12,6 +12,10 @@ const NATIVE_ACTION_CHANNEL = 'mailflow:native-action';
 const NATIVE_ACTION_ARG = '--mailflow-action=';
 const NEW_MAIL_NOTIFICATION_MAX_LENGTH = 240;
 const MAILTO_PROTOCOL = 'mailto';
+const REWRITE_ERROR_PATTERNS = [
+  /Rewrite\s+502\s+Bad\s+Gateway\s+Page/i,
+  /Rewrite\s+404\s+Error\s+Page/i,
+];
 const LINUX_BADGE_DESKTOP_IDS = [
   'MailFlow.desktop',
   'mailflow.desktop',
@@ -1322,6 +1326,17 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  mainWindow.webContents.on('did-fail-load', (_event, _errorCode, _errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return;
+    const host = readHost();
+    if (!host || !String(validatedURL || '').startsWith(host)) return;
+    loadHostUnavailable();
+  });
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    detectRewriteErrorPage();
+  });
+
   mainWindow.on('close', (event) => {
     if (!isQuitting && tray) {
       event.preventDefault();
@@ -1354,6 +1369,25 @@ function createWindow() {
 function loadSetup() {
   if (!mainWindow) return;
   mainWindow.loadFile(path.join(__dirname, '..', 'native-shell', 'index.html'));
+}
+
+function loadHostUnavailable() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.loadFile(path.join(__dirname, '..', 'native-shell', 'host-unavailable.html'));
+}
+
+function detectRewriteErrorPage() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const currentUrl = mainWindow.webContents.getURL();
+  const host = readHost();
+  if (!host || !currentUrl.startsWith(host)) return;
+
+  mainWindow.webContents.executeJavaScript('document.body ? document.body.innerText : ""', true)
+    .then((text) => {
+      if (!REWRITE_ERROR_PATTERNS.some((pattern) => pattern.test(String(text || '')))) return;
+      loadHostUnavailable();
+    })
+    .catch(() => {});
 }
 
 function scheduleStartupUpdateCheck() {
