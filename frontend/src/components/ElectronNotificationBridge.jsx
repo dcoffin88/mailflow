@@ -186,8 +186,18 @@ export default function ElectronNotificationBridge() {
 
     const handleNativeMessage = (event) => {
       if (event.source !== window) return;
-      if (event.data?.type !== 'mailflow:native-action') return;
-      runNativeAction(event.data.payload);
+      if (event.data?.type === 'mailflow:native-action') {
+        runNativeAction(event.data.payload);
+      } else if (event.data?.type === 'mailflow:native-actions-ready') {
+        drainInjectedActions();
+      }
+    };
+
+    const drainInjectedActions = () => {
+      const actions = Array.isArray(window.__mailflowPendingNativeActions)
+        ? window.__mailflowPendingNativeActions.splice(0)
+        : [];
+      actions.forEach(runNativeAction);
     };
 
     const unsubscribe = window.mailflowNative?.actions?.onAction?.((payload) => {
@@ -200,10 +210,13 @@ export default function ElectronNotificationBridge() {
       })
       .catch(() => {});
 
+    drainInjectedActions();
     window.addEventListener('mailflow:native-action', handleNativeAction);
+    window.addEventListener('mailflow:native-actions-ready', drainInjectedActions);
     window.addEventListener('message', handleNativeMessage);
     return () => {
       window.removeEventListener('mailflow:native-action', handleNativeAction);
+      window.removeEventListener('mailflow:native-actions-ready', drainInjectedActions);
       window.removeEventListener('message', handleNativeMessage);
       if (typeof unsubscribe === 'function') unsubscribe();
     };

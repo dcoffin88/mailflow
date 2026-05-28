@@ -47,6 +47,8 @@ public class MailFlowWebViewClient extends BridgeWebViewClient {
 
         if (!isConfiguredHost(url)) return;
 
+        MailFlowNativePlugin.injectPendingActions(view, context);
+
         view.evaluateJavascript("(document.body ? document.body.innerText : '')", (text) -> {
             String bodyText = text == null ? "" : text.toLowerCase();
             if (bodyText.contains("rewrite 502 bad gateway page") || bodyText.contains("rewrite 404 error page")) {

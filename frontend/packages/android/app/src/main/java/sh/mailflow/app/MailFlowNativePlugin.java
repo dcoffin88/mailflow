@@ -12,6 +12,7 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.webkit.WebView;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
@@ -198,6 +199,41 @@ public class MailFlowNativePlugin extends Plugin {
         return getPrefs(context).getString(PREF_HOST, null);
     }
 
+    static void injectPendingActions(WebView webView, Context context) {
+        if (webView == null || context == null || !isConfiguredHost(context, webView.getUrl())) return;
+
+        List<JSObject> actions;
+        synchronized (pendingActions) {
+            if (pendingActions.isEmpty()) return;
+            actions = new ArrayList<>(pendingActions);
+            pendingActions.clear();
+        }
+
+        String actionJson = new JSArray(actions).toString();
+        String script = "(function(actions){"
+            + "window.__mailflowPendingNativeActions=(window.__mailflowPendingNativeActions||[]).concat(actions);"
+            + "var delivered=false;"
+            + "var deliver=function(force){"
+            + "if(delivered)return true;"
+            + "if(!force&&window.__mailflowNativeBridgeReady!==true)return false;"
+            + "delivered=true;"
+            + "actions.forEach(function(payload){"
+            + "window.dispatchEvent(new CustomEvent('mailflow:native-action',{detail:payload}));"
+            + "window.postMessage({type:'mailflow:native-action',payload:payload},'*');"
+            + "});"
+            + "window.dispatchEvent(new CustomEvent('mailflow:native-actions-ready'));"
+            + "window.postMessage({type:'mailflow:native-actions-ready'},'*');"
+            + "return true;"
+            + "};"
+            + "if(!deliver(false)){"
+            + "var attempts=0;"
+            + "var timer=window.setInterval(function(){attempts+=1;if(deliver(false)||attempts>=100){if(!delivered)deliver(true);window.clearInterval(timer);}},100);"
+            + "}"
+            + "})( " + actionJson + " );";
+
+        webView.post(() -> webView.evaluateJavascript(script, null));
+    }
+
     static void sendOpenMessageAction(Intent intent) {
         JSObject action = newAction("open-message");
         copyStringExtra(intent, action, "messageId");
@@ -244,7 +280,13 @@ public class MailFlowNativePlugin extends Plugin {
 
         if (instance != null) {
             instance.notifyListeners("nativeAction", action, true);
+            instance.injectPendingActionsToWebView();
         }
+    }
+
+    private void injectPendingActionsToWebView() {
+        if (getBridge() == null) return;
+        injectPendingActions(getBridge().getWebView(), getContext());
     }
 
     private static JSObject newAction(String actionName) {
@@ -346,6 +388,11 @@ public class MailFlowNativePlugin extends Plugin {
 
     private static SharedPreferences getPrefs(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+    }
+
+    private static boolean isConfiguredHost(Context context, String url) {
+        String host = getSavedHost(context);
+        return host != null && url != null && url.startsWith(host);
     }
 
     private static void createNotificationChannel(Context context) {

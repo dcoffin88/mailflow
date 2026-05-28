@@ -2,7 +2,9 @@ package sh.mailflow.app;
 
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.webkit.CookieManager;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -14,6 +16,7 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         if (bridge != null) {
+            configureCookies();
             bridge.setWebViewClient(new MailFlowWebViewClient(bridge, this));
             String savedHost = MailFlowNativePlugin.getSavedHost(this);
             if (savedHost != null) {
@@ -22,6 +25,24 @@ public class MainActivity extends BridgeActivity {
         }
 
         handleNativeIntent(getIntent());
+    }
+
+    @Override
+    public void onPause() {
+        flushCookies();
+        super.onPause();
+    }
+
+    @Override
+    public void onStop() {
+        flushCookies();
+        super.onStop();
+    }
+
+    @Override
+    public void onDestroy() {
+        flushCookies();
+        super.onDestroy();
     }
 
     @Override
@@ -67,5 +88,19 @@ public class MainActivity extends BridgeActivity {
         if (key.equals(lastHandledIntentKey)) return false;
         lastHandledIntentKey = key;
         return true;
+    }
+
+    private void configureCookies() {
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && bridge != null && bridge.getWebView() != null) {
+            cookieManager.setAcceptThirdPartyCookies(bridge.getWebView(), true);
+        }
+    }
+
+    private void flushCookies() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            CookieManager.getInstance().flush();
+        }
     }
 }
