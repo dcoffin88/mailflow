@@ -71,6 +71,11 @@ export default function ElectronNotificationBridge() {
   }, [addNotification]);
 
   useEffect(() => {
+    if (window.mailflowNative?.platform !== 'android') return;
+    window.mailflowNative?.updates?.check?.(false)?.catch?.(() => {});
+  }, []);
+
+  useEffect(() => {
     const runNativeAction = async (payload) => {
       const action = typeof payload === 'string' ? payload : payload?.action;
       const id = typeof payload === 'object' ? payload?.id : null;

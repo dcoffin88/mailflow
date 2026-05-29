@@ -28,6 +28,7 @@ export function installCapacitorNativeBridge() {
   if (installed || window.mailflowNative || !Capacitor.isNativePlatform()) return;
 
   window.mailflowNative = {
+    platform: 'android',
     getHost: async () => {
       const result = await callNative('getHost', undefined, {});
       return result?.host || null;
@@ -39,6 +40,20 @@ export function installCapacitorNativeBridge() {
     resetHost: async () => callNative('resetHost'),
     badges: {
       setUnreadCount: async (count) => callNative('setUnreadCount', { count }),
+    },
+    updates: {
+      check: async (verbose) => callNative('checkForUpdates', { verbose }),
+      installDownloaded: async () => callNative('installDownloadedUpdate', undefined, { installed: false, reason: 'unavailable' }),
+      installAuto: async () => callNative('installDownloadedUpdate', undefined, { installed: false, reason: 'unavailable' }),
+      openDownload: async () => callNative('openDownloadedUpdate'),
+      onStatus: (callback) => {
+        if (pluginUnavailable) return () => {};
+        const MailFlowNative = getPlugin();
+        const handlePromise = MailFlowNative.addListener('updateStatus', callback).catch(() => null);
+        return () => {
+          handlePromise.then((handle) => handle?.remove?.()).catch(() => {});
+        };
+      },
     },
     notifications: {
       checkPermission: async () => {
