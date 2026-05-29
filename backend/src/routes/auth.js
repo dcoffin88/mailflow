@@ -350,7 +350,7 @@ router.patch('/preferences', async (req, res) => {
           blockRemoteImages, imageWhitelist, shortcuts, hiddenFolders, language,
           threadedView, plaintextEmail, hoverQuickActions, swipeActions,
           expandedAccounts, collapsedFolders, favoriteFolders, recentFolders, fontSize,
-          showAppBadge, showFaviconBadge } = req.body;
+          showAppBadge, showFaviconBadge, replyDefault, sidebarWidth } = req.body;
   // JSONB fields must be serialised to strings for the ::jsonb cast
   const imageWhitelistJson    = imageWhitelist    != null ? JSON.stringify(imageWhitelist)    : null;
   const shortcutsJson         = shortcuts         != null ? JSON.stringify(shortcuts)         : null;
@@ -361,6 +361,8 @@ router.patch('/preferences', async (req, res) => {
   const favoriteFoldersJson   = favoriteFolders   != null ? JSON.stringify(favoriteFolders)   : null;
   const recentFoldersJson     = recentFolders     != null ? JSON.stringify(recentFolders)     : null;
   const fontSizeVal           = fontSize          != null ? String(fontSize)                  : null;
+  const replyDefaultVal       = (replyDefault === 'reply' || replyDefault === 'replyAll') ? replyDefault : null;
+  const sidebarWidthVal       = (() => { const n = parseInt(sidebarWidth); return (n >= 160 && n <= 400) ? String(n) : null; })();
   await query(`
     UPDATE users
     SET preferences = preferences
@@ -387,13 +389,15 @@ router.patch('/preferences', async (req, res) => {
       || CASE WHEN $22::text IS NOT NULL THEN jsonb_build_object('fontSize', $22::text) ELSE '{}'::jsonb END
       || CASE WHEN $23::boolean IS NOT NULL THEN jsonb_build_object('showAppBadge', $23::boolean) ELSE '{}'::jsonb END
       || CASE WHEN $24::boolean IS NOT NULL THEN jsonb_build_object('showFaviconBadge', $24::boolean) ELSE '{}'::jsonb END
+      || CASE WHEN $25::text IS NOT NULL THEN jsonb_build_object('replyDefault', $25::text) ELSE '{}'::jsonb END
+      || CASE WHEN $26::text IS NOT NULL THEN jsonb_build_object('sidebarWidth', $26::text) ELSE '{}'::jsonb END
     WHERE id = $1
   `, [req.session.userId, theme ?? null, font ?? null, layout ?? null, notificationSound ?? null,
       pageSize ?? null, scrollMode ?? null, syncInterval ?? null,
       blockRemoteImages ?? null, imageWhitelistJson, shortcutsJson, hiddenFoldersJson,
       language ?? null, threadedView ?? null, plaintextEmail ?? null, hoverQuickActions ?? null,
       swipeActionsJson, expandedAccountsJson, collapsedFoldersJson, favoriteFoldersJson, recentFoldersJson, fontSizeVal,
-      showAppBadge ?? null, showFaviconBadge ?? null]);
+      showAppBadge ?? null, showFaviconBadge ?? null, replyDefaultVal, sidebarWidthVal]);
 
   if (syncInterval != null) {
     const ms = parseInt(syncInterval) * 1000;
