@@ -104,6 +104,7 @@ export function useSwipeRow({ isMobile, message, onSwipeLeft, onSwipeRight, onLo
       springBack();
     };
 
+    el.style.touchAction = 'pan-y';
     el.addEventListener('touchstart', onStart, { passive: true });
     el.addEventListener('touchmove', onMove, { passive: false });
     el.addEventListener('touchend', onEnd, { passive: true });
@@ -114,6 +115,7 @@ export function useSwipeRow({ isMobile, message, onSwipeLeft, onSwipeRight, onLo
       el.removeEventListener('touchmove', onMove);
       el.removeEventListener('touchend', onEnd);
       el.removeEventListener('touchcancel', onCancel);
+      el.style.touchAction = '';
       el.style.transform = 'translateX(0)';
       el.style.transition = '';
       el.style.boxShadow = '';
