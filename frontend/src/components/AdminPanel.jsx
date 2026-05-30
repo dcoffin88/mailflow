@@ -5897,6 +5897,7 @@ const LANGUAGES = [
   { code: 'zhCN', nativeName: '简体中文'},
   { code: 'pl', nativeName: 'Polski' },
   { code: 'cs', nativeName: 'Čeština' },
+  { code: 'pt', nativeName: 'português (Brasil)'},
 ];
 
 function LanguageTab() {

@@ -9,6 +9,7 @@ import ru from './locales/ru.json';
 import zhCN from './locales/zhCN.json';
 import pl from './locales/pl.json';
 import cs from './locales/cs.json';
+import pt from './locales/pt/json
 
 const savedLng = localStorage.getItem('mailflow_language') || 'en';
 
@@ -25,6 +26,7 @@ i18n
       zhCN: {translation: zhCN},
       pl: { translation: pl },
       cs: { translation: cs },
+      pt: { translation: pt },
     },
     lng: savedLng,
     fallbackLng: 'en',
