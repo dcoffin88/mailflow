@@ -382,7 +382,7 @@ public class MailFlowNativePlugin extends Plugin {
             + "window.mailflowNative.platform='android';"
             + "window.mailflowNative.updates=window.mailflowNative.updates||{};"
             + "window.mailflowNative.updates.check=function(verbose){return call('checkForUpdates',{verbose:!!verbose});};"
-            + "window.mailflowNative.updates.installDownloaded=function(){return call('installDownloadedUpdate',{}, {installed:false,reason:'unavailable'});};"
+            + "window.mailflowNative.updates.installDownloaded=function(){if(androidNotifications&&typeof androidNotifications.installDownloadedUpdate==='function'){try{return Promise.resolve(JSON.parse(androidNotifications.installDownloadedUpdate()||'{}'));}catch(e){return Promise.resolve({installed:false,reason:'unavailable'});}}return call('installDownloadedUpdate',{}, {installed:false,reason:'unavailable'});};"
             + "window.mailflowNative.updates.installAuto=window.mailflowNative.updates.installDownloaded;"
             + "window.mailflowNative.updates.openDownload=function(){return call('openDownloadedUpdate',{});};"
             + "window.mailflowNative.updates.onStatus=function(callback){if(typeof callback!=='function')return function(){};var handler=function(event){callback(event.detail);};window.addEventListener('mailflow:update-status',handler);return function(){window.removeEventListener('mailflow:update-status',handler);};};"
@@ -1068,6 +1068,18 @@ public class MailFlowNativePlugin extends Plugin {
                     message
                 );
             } catch (JSONException ignored) {}
+        }
+
+        @JavascriptInterface
+        public String installDownloadedUpdate() {
+            if (instance == null) {
+                JSObject result = new JSObject();
+                result.put("installed", false);
+                result.put("reason", "unavailable");
+                return result.toString();
+            }
+
+            return instance.showUpdateReadyDialog().toString();
         }
     }
 

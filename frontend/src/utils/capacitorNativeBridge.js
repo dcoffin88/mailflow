@@ -25,9 +25,12 @@ async function callNative(method, args, fallback = null) {
 }
 
 export function installCapacitorNativeBridge() {
-  if (installed || window.mailflowNative || !Capacitor.isNativePlatform()) return;
+  if (installed || !Capacitor.isNativePlatform()) return;
+
+  const existingBridge = window.mailflowNative || {};
 
   window.mailflowNative = {
+    ...existingBridge,
     platform: 'android',
     getHost: async () => {
       const result = await callNative('getHost', undefined, {});
@@ -39,9 +42,11 @@ export function installCapacitorNativeBridge() {
     },
     resetHost: async () => callNative('resetHost'),
     badges: {
+      ...existingBridge.badges,
       setUnreadCount: async (count) => callNative('setUnreadCount', { count }),
     },
     updates: {
+      ...existingBridge.updates,
       check: async (verbose) => callNative('checkForUpdates', { verbose }),
       installDownloaded: async () => callNative('installDownloadedUpdate', undefined, { installed: false, reason: 'unavailable' }),
       installAuto: async () => callNative('installDownloadedUpdate', undefined, { installed: false, reason: 'unavailable' }),
@@ -56,6 +61,7 @@ export function installCapacitorNativeBridge() {
       },
     },
     notifications: {
+      ...existingBridge.notifications,
       checkPermission: async () => {
         const result = await callNative('checkNotificationPermission', undefined, {});
         return result?.permission || 'default';
@@ -68,6 +74,7 @@ export function installCapacitorNativeBridge() {
       showNewMail: async (notification) => callNative('showNewMail', notification || {}),
     },
     actions: {
+      ...existingBridge.actions,
       getPending: async () => {
         const result = await callNative('getPendingActions', undefined, {});
         return result?.actions || [];
