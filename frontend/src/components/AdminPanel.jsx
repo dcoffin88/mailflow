@@ -3675,6 +3675,7 @@ const LANGUAGES = [
   { code: 'it', nativeName: 'Italiano' },
   { code: 'ru', nativeName: 'Русский' },
   { code: 'zhCN', nativeName: '简体中文'},
+  { code: 'pt', nativeName: 'português (Brasil)'},
 ];
 
 function LanguageTab() {
