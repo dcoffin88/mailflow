@@ -56,6 +56,9 @@ import org.json.JSONObject;
 )
 public class MailFlowNativePlugin extends Plugin {
     static final String ACTION_OPEN_MESSAGE = "sh.mailflow.app.OPEN_MESSAGE";
+    static final String ACTION_REPLY_MESSAGE = "sh.mailflow.app.REPLY_MESSAGE";
+    static final String ACTION_DELETE_MESSAGE = "sh.mailflow.app.DELETE_MESSAGE";
+    static final String ACTION_STAR_MESSAGE = "sh.mailflow.app.STAR_MESSAGE";
     static final String ACTION_COMPOSE = "sh.mailflow.app.COMPOSE";
     static final String ACTION_SYNC = "sh.mailflow.app.SYNC";
     static final String ACTION_INSTALL_UPDATE = "sh.mailflow.app.INSTALL_UPDATE";
@@ -286,6 +289,33 @@ public class MailFlowNativePlugin extends Plugin {
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
+        PendingIntent replyPendingIntent = messageActionPendingIntent(
+            context,
+            notificationId,
+            ACTION_REPLY_MESSAGE,
+            messageId,
+            accountId,
+            folder,
+            message
+        );
+        PendingIntent deletePendingIntent = messageActionPendingIntent(
+            context,
+            notificationId,
+            ACTION_DELETE_MESSAGE,
+            messageId,
+            accountId,
+            folder,
+            message
+        );
+        PendingIntent starPendingIntent = messageActionPendingIntent(
+            context,
+            notificationId,
+            ACTION_STAR_MESSAGE,
+            messageId,
+            accountId,
+            folder,
+            message
+        );
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_NEW_MAIL)
             .setSmallIcon(R.mipmap.ic_launcher)
@@ -293,10 +323,32 @@ public class MailFlowNativePlugin extends Plugin {
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
             .setContentIntent(pendingIntent)
+            .addAction(R.mipmap.ic_launcher, "Reply", replyPendingIntent)
+            .addAction(R.mipmap.ic_launcher, "Delete", deletePendingIntent)
+            .addAction(R.mipmap.ic_launcher, "Star", starPendingIntent)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT);
 
         NotificationManagerCompat.from(context).notify(notificationId, builder.build());
+    }
+
+    private static PendingIntent messageActionPendingIntent(Context context, int notificationId, String action, String messageId, String accountId, String folder, JSObject message) {
+        Intent intent = new Intent(context, MainActivity.class);
+        intent.setAction(action);
+        intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        intent.putExtra("notificationId", notificationId);
+        putExtra(intent, "messageId", messageId);
+        putExtra(intent, "accountId", accountId);
+        putExtra(intent, "folder", folder);
+        if (message != null) putExtra(intent, "message", message.toString());
+
+        int requestCode = Math.abs((action + ":" + notificationId).hashCode());
+        return PendingIntent.getActivity(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
     }
 
     @PluginMethod
@@ -398,6 +450,39 @@ public class MailFlowNativePlugin extends Plugin {
 
     static void sendOpenMessageAction(Intent intent) {
         JSObject action = newAction("open-message");
+        copyStringExtra(intent, action, "messageId");
+        copyStringExtra(intent, action, "accountId");
+        copyStringExtra(intent, action, "folder");
+
+        String messageJson = intent.getStringExtra("message");
+        if (messageJson != null) {
+            try {
+                action.put("message", new JSObject(messageJson));
+            } catch (JSONException ignored) {}
+        }
+
+        dispatchAction(action);
+    }
+
+    static void sendReplyMessageAction(Intent intent) {
+        sendMessageNotificationAction(intent, "reply-message");
+    }
+
+    static void sendDeleteMessageAction(Intent intent) {
+        sendMessageNotificationAction(intent, "delete-message");
+    }
+
+    static void sendStarMessageAction(Intent intent) {
+        sendMessageNotificationAction(intent, "star-message");
+    }
+
+    private static void sendMessageNotificationAction(Intent intent, String actionName) {
+        int notificationId = intent.getIntExtra("notificationId", -1);
+        if (notificationId != -1 && instance != null) {
+            NotificationManagerCompat.from(instance.getContext()).cancel(notificationId);
+        }
+
+        JSObject action = newAction(actionName);
         copyStringExtra(intent, action, "messageId");
         copyStringExtra(intent, action, "accountId");
         copyStringExtra(intent, action, "folder");

@@ -76,6 +76,71 @@ export default function ElectronNotificationBridge() {
   }, []);
 
   useEffect(() => {
+    const getPayloadMessage = (payload) => {
+      const state = useStore.getState();
+      return payload?.message || state.messages.find((item) => item.id === payload?.messageId) || null;
+    };
+
+    const openMessageFromPayload = (payload) => {
+      const messageId = payload?.messageId;
+      if (!messageId) return null;
+
+      const folder = payload.folder || 'INBOX';
+      const message = getPayloadMessage(payload);
+      const state = useStore.getState();
+
+      setSearchQuery('');
+      if (payload.accountId) {
+        setSelectedAccount(payload.accountId, folder);
+      }
+
+      if (message && !state.messages.some((item) => item.id === message.id)) {
+        useStore.setState((current) => ({
+          messages: [{ ...message, account_id: message.account_id || payload.accountId }, ...current.messages],
+        }));
+      }
+
+      window.dispatchEvent(new CustomEvent('mailflow:refresh'));
+      window.setTimeout(() => setSelectedMessage(messageId), 0);
+      return message;
+    };
+
+    const normalizeAddressList = (value) => {
+      if (Array.isArray(value)) return value;
+      try {
+        const parsed = JSON.parse(value || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    };
+
+    const openReplyFromPayload = (payload) => {
+      const message = openMessageFromPayload(payload);
+      if (!message) return;
+
+      const replyTo = normalizeAddressList(message.reply_to);
+      const replyTarget = replyTo[0]?.email
+        ? replyTo[0]
+        : { name: message.from_name || '', email: message.from_email || '' };
+      const sender = replyTarget.email ? [replyTarget] : [];
+      const rawSubject = (message.subject || '').trim();
+      const subject = rawSubject.startsWith('Re:') ? rawSubject : rawSubject ? `Re: ${rawSubject}` : 'Re:';
+
+      openCompose({
+        to: sender,
+        cc: [],
+        subject,
+        body: '',
+        inReplyTo: message.message_id,
+        references: [message.in_reply_to, message.message_id].filter(Boolean).join(' ').trim() || null,
+        accountId: message.account_id || payload.accountId,
+        isReply: true,
+        originalFrom: sender,
+        allRecipients: [],
+      });
+    };
+
     const runNativeAction = async (payload) => {
       const action = typeof payload === 'string' ? payload : payload?.action;
       const id = typeof payload === 'object' ? payload?.id : null;
@@ -97,26 +162,31 @@ export default function ElectronNotificationBridge() {
         }
 
         if (action === 'open-message') {
+          openMessageFromPayload(payload);
+          return;
+        }
+
+        if (action === 'reply-message') {
+          openReplyFromPayload(payload);
+          return;
+        }
+
+        if (action === 'delete-message') {
           const messageId = payload?.messageId;
           if (!messageId) return;
 
-          const folder = payload.folder || 'INBOX';
-          const message = payload.message;
-          const state = useStore.getState();
-
-          setSearchQuery('');
-          if (payload.accountId) {
-            setSelectedAccount(payload.accountId, folder);
-          }
-
-          if (message && !state.messages.some((item) => item.id === message.id)) {
-            useStore.setState((current) => ({
-              messages: [{ ...message, account_id: message.account_id || payload.accountId }, ...current.messages],
-            }));
-          }
-
+          await api.deleteMessage(messageId);
+          useStore.getState().removeMessage(messageId);
           window.dispatchEvent(new CustomEvent('mailflow:refresh'));
-          window.setTimeout(() => setSelectedMessage(messageId), 0);
+          return;
+        }
+
+        if (action === 'star-message') {
+          const messageId = payload?.messageId;
+          if (!messageId) return;
+
+          await api.markStarred(messageId, true);
+          useStore.getState().updateMessage(messageId, { is_starred: true });
           return;
         }
 

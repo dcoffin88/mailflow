@@ -102,6 +102,21 @@ public class MainActivity extends BridgeActivity {
             return;
         }
 
+        if (MailFlowNativePlugin.ACTION_REPLY_MESSAGE.equals(action)) {
+            MailFlowNativePlugin.sendReplyMessageAction(intent);
+            return;
+        }
+
+        if (MailFlowNativePlugin.ACTION_DELETE_MESSAGE.equals(action)) {
+            MailFlowNativePlugin.sendDeleteMessageAction(intent);
+            return;
+        }
+
+        if (MailFlowNativePlugin.ACTION_STAR_MESSAGE.equals(action)) {
+            MailFlowNativePlugin.sendStarMessageAction(intent);
+            return;
+        }
+
         if (MailFlowNativePlugin.ACTION_COMPOSE.equals(action)) {
             MailFlowNativePlugin.sendComposeAction();
             return;
