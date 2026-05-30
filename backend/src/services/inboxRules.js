@@ -131,20 +131,23 @@ async function applyAction(action, msg, account, imapManager) {
     case 'move': {
       const destFolder = action.value;
       if (!destFolder) break;
+      // IMAP first — if the server-side move fails (throws or returns failed UIDs),
+      // the error propagates to the caller so the DB is never updated. This prevents
+      // a DB/IMAP split where the DB shows the message in destFolder but IMAP still
+      // has it in INBOX, which caused the next sync to bounce the message back via
+      // the relocation logic.
+      const moveResult = await imapManager.bulkMoveMessages(account, [msg.uid], msg.folder, destFolder);
+      if (moveResult.failed?.length) throw new Error(`IMAP move to ${destFolder} failed for uid ${msg.uid}`);
       await query('UPDATE messages SET folder = $1 WHERE id = $2', [destFolder, msg.id]);
-      await imapManager.bulkMoveMessages(account, [msg.uid], msg.folder, destFolder).catch(err => {
-        console.error('inboxRules: bulkMoveMessages failed:', err.message);
-      });
       break;
     }
 
     case 'archive': {
       const archiveFolder = await resolveArchiveFolder(account.id, account.folder_mappings);
       if (!archiveFolder) break;
+      const archiveResult = await imapManager.bulkMoveMessages(account, [msg.uid], msg.folder, archiveFolder);
+      if (archiveResult.failed?.length) throw new Error(`IMAP archive failed for uid ${msg.uid}`);
       await query('UPDATE messages SET folder = $1 WHERE id = $2', [archiveFolder, msg.id]);
-      await imapManager.bulkMoveMessages(account, [msg.uid], msg.folder, archiveFolder).catch(err => {
-        console.error('inboxRules: archive bulkMoveMessages failed:', err.message);
-      });
       break;
     }
 
@@ -154,15 +157,12 @@ async function applyAction(action, msg, account, imapManager) {
       const strategy = getDeleteStrategy(msg.folder, trashFolder, allTrashPaths);
       if (strategy.action === 'no_trash') break;
       if (strategy.action === 'move') {
+        const deleteResult = await imapManager.bulkMoveMessages(account, [msg.uid], msg.folder, strategy.destination);
+        if (deleteResult.failed?.length) throw new Error(`IMAP delete-move failed for uid ${msg.uid}`);
         await query('UPDATE messages SET folder = $1 WHERE id = $2', [strategy.destination, msg.id]);
-        await imapManager.bulkMoveMessages(account, [msg.uid], msg.folder, strategy.destination).catch(err => {
-          console.error('inboxRules: delete move failed:', err.message);
-        });
       } else if (strategy.action === 'expunge') {
+        await imapManager.setFlag(account, msg.uid, msg.folder, '\\Deleted', true);
         await query('UPDATE messages SET is_deleted = true WHERE id = $1', [msg.id]);
-        await imapManager.setFlag(account, msg.uid, msg.folder, '\\Deleted', true).catch(err => {
-          console.error('inboxRules: setFlag \\Deleted failed:', err.message);
-        });
       }
       break;
     }
