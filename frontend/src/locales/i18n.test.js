@@ -4,9 +4,26 @@
  * SUITE 1 — source coverage
  *   Every key in the locale files must be referenced at least once in the
  *   frontend source. Keys with no reference are dead and should be removed.
- *   Fix dead keys before fixing coverage (Suite 2) — otherwise you'll add
- *   translations for keys that should be deleted.
- *   See SUITE 3 below for full details.
+ *   Fix dead keys before fixing missing translations (Suite 2) — otherwise
+ *   you'll add translations for keys that should be deleted.
+ *
+ *   Failure example:
+ *     ✖ no unused keys
+ *       Unused keys (remove from all locale files or add a source reference):
+ *         - admin.rules.legacyTitle
+ *
+ *   Fix A — remove: delete the key from every locale file if it is genuinely dead.
+ *
+ *   Fix B — keep: if the key is referenced dynamically (e.g. via a variable passed
+ *   to t()), add it to DYNAMIC_KEYS so the test does not flag it:
+ *
+ *     const DYNAMIC_KEYS = new Set([
+ *       'admin.tabs.accounts',   // t(tab.labelKey) where labelKey is set at runtime
+ *     ]);
+ *
+ *   The test scans for the key string anywhere in *.js / *.jsx files under src/,
+ *   excluding the locale files themselves. A key counts as referenced if it
+ *   appears literally in the source — even in a comment or property assignment.
  *
  * SUITE 2 — key coverage
  *   Every key present in any locale file must exist in all locale files.
@@ -40,28 +57,6 @@
  *     'some.key': [['de', 'en']]     // only this pair may share a value
  *     'some.key': [['en','fr'],      // two independent groups; cross-group
  *                  ['es','it']]      // duplicates would still fail
- *
- * SUITE 1 (detail) — source coverage
- *   Every key must be referenced at least once in the frontend source.
- *   Keys with no reference are dead and should be removed from all locale files.
- *
- *   Failure example:
- *     ✖ no unused keys
- *       Unused keys (remove from all locale files or add a source reference):
- *         - admin.rules.legacyTitle
- *
- *   Fix A — remove: delete the key from every locale file if it is genuinely dead.
- *
- *   Fix B — keep: if the key is referenced dynamically (e.g. via a variable passed
- *   to t()), add it to DYNAMIC_KEYS so the test does not flag it:
- *
- *     const DYNAMIC_KEYS = new Set([
- *       'admin.tabs.accounts',   // t(tab.labelKey) where labelKey is set at runtime
- *     ]);
- *
- *   The test scans for the key string anywhere in *.js / *.jsx files under src/,
- *   excluding the locale files themselves. A key counts as referenced if it
- *   appears literally in the source — even in a comment or property assignment.
  *
  * SUITE 4 — hardcoded user-facing strings
  *   JSX source must not contain user-visible string literals outside of t().
