@@ -1389,6 +1389,7 @@ function Sep() {
 }
 
 function RichToolbar({ editor, onAttach, onInsertImage, onInsertTable, htmlMode, onToggleHtml }) {
+  const { t } = useTranslation();
   const savedSelectionRef = useRef(null);
   const [colorPos, setColorPos] = useState(null);
   const [emojiPos, setEmojiPos] = useState(null);
