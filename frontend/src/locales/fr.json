@@ -642,7 +642,7 @@
       "eventSsoLogin": "Connexion SSO",
       "activityTitle": "Activité de connexion",
       "loginProtectionTitle": "Protection de connexion",
-      "qrCodeAlt": "QR code"
+      "qrCodeAlt": "code QR"
     },
     "privacy": {
       "title": "Confidentialité",

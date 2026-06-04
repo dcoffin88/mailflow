@@ -118,7 +118,6 @@ const SAME_VALUE_ALLOWED = {
   'admin.accounts.imapHostPh':              'any', // imap.gmail.com
   'admin.accounts.presetGmail':             'any', // Gmail
   'admin.accounts.presetIcloud':            'any', // iCloud
-  'admin.accounts.presetMicrosoft':         'any', // Outlook
   'admin.accounts.presetYahoo':             'any', // Yahoo Mail
   'admin.accounts.smtpHostPh':              'any', // smtp.gmail.com
   'admin.integrations.microsoft.clientIdPh':'any', // xxxxxxxx-xxxx-…
@@ -138,6 +137,7 @@ const SAME_VALUE_ALLOWED = {
   // "Alias" — Latin origin, same spelling in es, fr, it
   'admin.accounts.aliases': [['es', 'fr', 'it']],
   'admin.aliases.title':     [['es', 'fr', 'it']],
+
 
   // email placeholder — example.com address looks the same in en, ru, zhCN
   'admin.accounts.emailPh':    [['en', 'ru', 'zhCN']],
@@ -175,8 +175,8 @@ const SAME_VALUE_ALLOWED = {
   // "Spam / Junk" — "Spam" is a universal loanword, same in de and en
   'admin.folderMappings.spam': [['de', 'en']],
 
-  // "QR code" — universal technical abbreviation, same in all locales
-  'admin.security.qrCodeAlt': 'any',
+  // "QR code" — same in en and es; de "QR-Code", fr "code QR", it "codice QR", ru "QR-код", zhCN "QR码"
+  'admin.security.qrCodeAlt': [['en', 'es']],
 
   // "Visita:" — "Visit:" translates identically in es and it (Romance languages)
   'admin.integrations.microsoft.deviceCodeVisit': [['es', 'it']],
