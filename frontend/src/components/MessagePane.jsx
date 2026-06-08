@@ -670,6 +670,70 @@ ${bodyContent}
     }
   };
 
+  const handleOpenMovePicker = useCallback(async () => {
+    if (!message) return;
+    if (showMovePicker) { setShowMovePicker(false); return; }
+    setShowMovePicker(true);
+    setMovePickerLoading(true);
+    try {
+      const data = await api.getFolders(message.account_id);
+      setMovePickerFolders(Array.isArray(data) ? data : (data.folders || []));
+    } catch (err) {
+      console.error('Failed to load folders:', err);
+      setMovePickerFolders([]);
+    } finally {
+      setMovePickerLoading(false);
+    }
+  }, [showMovePicker, message?.account_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleMoveToFolder = useCallback((folder) => {
+    if (!message) return;
+    setShowMovePicker(false);
+    const moved = message;
+    removeMessage(moved.id);
+    if (!moved.is_read) decrementUnread(moved.account_id);
+    let undone = false;
+    const timer = setTimeout(async () => {
+      if (undone) return;
+      try {
+        await api.bulkMove([moved.id], folder);
+        useStore.getState().recordRecentFolder({ accountId: moved.account_id, path: folder });
+      } catch (err) {
+        console.error('Move failed:', err);
+        useStore.getState().restoreMessages([moved]);
+        if (!moved.is_read) incrementUnread(moved.account_id);
+        addNotification({ title: t('message.moved.failTitle'), body: t('message.moved.failBody') });
+      }
+    }, 4500);
+    addNotification({
+      title: t('message.moved.title'),
+      body: folder,
+      onUndo: () => {
+        undone = true;
+        clearTimeout(timer);
+        useStore.getState().restoreMessages([moved]);
+        if (!moved.is_read) incrementUnread(moved.account_id);
+      },
+    });
+  }, [message, removeMessage, decrementUnread, incrementUnread, addNotification, t]);
+
+  // Close move picker when the selected message changes and handle click-outside
+  useEffect(() => {
+    setShowMovePicker(false);
+    setShowHeaderModal(false);
+  }, [selectedMessageId]);
+
+  useEffect(() => {
+    if (!showMovePicker) return;
+    const onPointer = (e) => {
+      if (moveBtnRef.current && !moveBtnRef.current.contains(e.target)) {
+        setShowMovePicker(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointer);
+    return () => document.removeEventListener('pointerdown', onPointer);
+  }, [showMovePicker]);
+
   if (!message) {
     return (
       <div style={{
@@ -805,68 +869,6 @@ ${bodyContent}
       setSavingAllow(false);
     }
   };
-
-  const handleOpenMovePicker = useCallback(async () => {
-    if (showMovePicker) { setShowMovePicker(false); return; }
-    setShowMovePicker(true);
-    setMovePickerLoading(true);
-    try {
-      const data = await api.getFolders(message.account_id);
-      setMovePickerFolders(Array.isArray(data) ? data : (data.folders || []));
-    } catch (err) {
-      console.error('Failed to load folders:', err);
-      setMovePickerFolders([]);
-    } finally {
-      setMovePickerLoading(false);
-    }
-  }, [showMovePicker, message?.account_id]);
-
-  const handleMoveToFolder = useCallback((folder) => {
-    setShowMovePicker(false);
-    const moved = message;
-    removeMessage(moved.id);
-    if (!moved.is_read) decrementUnread(moved.account_id);
-    let undone = false;
-    const timer = setTimeout(async () => {
-      if (undone) return;
-      try {
-        await api.bulkMove([moved.id], folder);
-        useStore.getState().recordRecentFolder({ accountId: moved.account_id, path: folder });
-      } catch (err) {
-        console.error('Move failed:', err);
-        useStore.getState().restoreMessages([moved]);
-        if (!moved.is_read) incrementUnread(moved.account_id);
-        addNotification({ title: t('message.moved.failTitle'), body: t('message.moved.failBody') });
-      }
-    }, 4500);
-    addNotification({
-      title: t('message.moved.title'),
-      body: folder,
-      onUndo: () => {
-        undone = true;
-        clearTimeout(timer);
-        useStore.getState().restoreMessages([moved]);
-        if (!moved.is_read) incrementUnread(moved.account_id);
-      },
-    });
-  }, [message, removeMessage, decrementUnread, incrementUnread, addNotification, t]);
-
-  // Close move picker when the selected message changes and handle click-outside
-  useEffect(() => {
-    setShowMovePicker(false);
-    setShowHeaderModal(false);
-  }, [selectedMessageId]);
-
-  useEffect(() => {
-    if (!showMovePicker) return;
-    const onPointer = (e) => {
-      if (moveBtnRef.current && !moveBtnRef.current.contains(e.target)) {
-        setShowMovePicker(false);
-      }
-    };
-    document.addEventListener('pointerdown', onPointer);
-    return () => document.removeEventListener('pointerdown', onPointer);
-  }, [showMovePicker]);
 
   const toList = (() => {
     try {
