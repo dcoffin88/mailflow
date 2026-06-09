@@ -1185,12 +1185,33 @@ export default function MessageList() {
   useEffect(() => {
     const getState = () => useStore.getState();
 
+    const markRead = (msg) => {
+      if (msg.is_read) return;
+      const { updateMessage, decrementUnread, incrementUnread } = getState();
+      updateMessage(msg.id, { is_read: true });
+      decrementUnread(msg.account_id);
+      setPending(msg.id, msg.account_id);
+      api.bulkRead([msg.id], true)
+        .then(() => {
+          pendingMarkReadMap.delete(msg.id);
+          completedMarkReadMap.set(msg.id, msg.account_id);
+          setTimeout(() => completedMarkReadMap.delete(msg.id), 10000);
+        })
+        .catch(e => {
+          console.error('markRead failed:', e.message);
+          updateMessage(msg.id, { is_read: false });
+          incrementUnread(msg.account_id);
+          pendingMarkReadMap.delete(msg.id);
+        });
+    };
+
     const onNext = () => {
       const { messages, selectedMessageId, setSelectedMessage } = getState();
       if (!messages.length) return;
       const idx = messages.findIndex(m => m.id === selectedMessageId);
       const next = messages[idx + 1] ?? messages[0];
       setSelectedMessage(next.id);
+      markRead(next);
     };
 
     const onPrev = () => {
@@ -1199,6 +1220,7 @@ export default function MessageList() {
       const idx = messages.findIndex(m => m.id === selectedMessageId);
       const prev = idx <= 0 ? messages[messages.length - 1] : messages[idx - 1];
       setSelectedMessage(prev.id);
+      markRead(prev);
     };
 
     const onOpen = () => {

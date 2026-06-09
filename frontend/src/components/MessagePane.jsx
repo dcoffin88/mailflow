@@ -7,6 +7,7 @@ import { shortcutBus } from '../utils/shortcutBus.js';
 import { getEffectiveShortcuts, parseModKey, modCompactLabel } from '../utils/defaultShortcuts.js';
 import { useMobile } from '../hooks/useMobile.js';
 import { clearDeleteGuard, setCompletedDelete, setPendingDelete } from '../utils/pendingDeletes.js';
+import { pendingMarkReadMap, completedMarkReadMap, setPending } from '../utils/pendingReads.js';
 import { senderColor } from '../themes.js';
 import MessageHeaderModal from './MessageHeaderModal.jsx';
 import FolderIcon from './FolderIcon.jsx';
@@ -81,6 +82,30 @@ export default function MessagePane() {
     const mod = parseModKey(k);
     return mod ? `${modCompactLabel(mod.mod)}${mod.bare.toUpperCase()}` : k.toUpperCase();
   };
+  // Navigate to a message and mark it as read in one shot.
+  // Arrow buttons and swipe gestures bypass handleSelect in MessageList, so they
+  // must duplicate the mark-as-read logic here to keep state consistent.
+  const selectAndMarkRead = useCallback((msg) => {
+    setSelectedMessage(msg.id);
+    if (!msg.is_read) {
+      updateMessage(msg.id, { is_read: true });
+      decrementUnread(msg.account_id);
+      setPending(msg.id, msg.account_id);
+      api.bulkRead([msg.id], true)
+        .then(() => {
+          pendingMarkReadMap.delete(msg.id);
+          completedMarkReadMap.set(msg.id, msg.account_id);
+          setTimeout(() => completedMarkReadMap.delete(msg.id), 10000);
+        })
+        .catch(e => {
+          console.error('markRead failed:', e.message);
+          updateMessage(msg.id, { is_read: false });
+          incrementUnread(msg.account_id);
+          pendingMarkReadMap.delete(msg.id);
+        });
+    }
+  }, [setSelectedMessage, updateMessage, decrementUnread, incrementUnread]);
+
   const paneRef = useRef(null);
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
@@ -417,13 +442,34 @@ export default function MessagePane() {
           el.style.transform = 'translateX(0)';
         }
       } else {
-        const { messages: msgs, searchResults: sr, searchQuery: sq, selectedMessageId: selId, setSelectedMessage: setSel } = useStore.getState();
+        const { messages: msgs, searchResults: sr, searchQuery: sq, selectedMessageId: selId, setSelectedMessage: setSel, updateMessage: updMsg, decrementUnread: decUnread, incrementUnread: incUnread } = useStore.getState();
         const list = sq.trim() ? sr : msgs;
         const idx = list.findIndex(m => m.id === selId);
+        let target = null;
         if (dx < -60 && idx >= 0 && idx < list.length - 1) {
-          setSel(list[idx + 1].id);
+          target = list[idx + 1];
         } else if (dx > 60 && idx > 0) {
-          setSel(list[idx - 1].id);
+          target = list[idx - 1];
+        }
+        if (target) {
+          setSel(target.id);
+          if (!target.is_read) {
+            updMsg(target.id, { is_read: true });
+            decUnread(target.account_id);
+            setPending(target.id, target.account_id);
+            api.bulkRead([target.id], true)
+              .then(() => {
+                pendingMarkReadMap.delete(target.id);
+                completedMarkReadMap.set(target.id, target.account_id);
+                setTimeout(() => completedMarkReadMap.delete(target.id), 10000);
+              })
+              .catch(e => {
+                console.error('markRead failed:', e.message);
+                updMsg(target.id, { is_read: false });
+                incUnread(target.account_id);
+                pendingMarkReadMap.delete(target.id);
+              });
+          }
         }
       }
     };
@@ -932,7 +978,7 @@ ${bodyContent}
           </div>
           <button
             disabled={!hasPrev}
-            onClick={() => setSelectedMessage(allMessages[currentIdx - 1].id)}
+            onClick={() => selectAndMarkRead(allMessages[currentIdx - 1])}
             title={t('message.previousMessage')}
             style={{
               background: 'none', border: 'none', flexShrink: 0,
@@ -947,7 +993,7 @@ ${bodyContent}
           </button>
           <button
             disabled={!hasNext}
-            onClick={() => setSelectedMessage(allMessages[currentIdx + 1].id)}
+            onClick={() => selectAndMarkRead(allMessages[currentIdx + 1])}
             title={t('message.nextMessage')}
             style={{
               background: 'none', border: 'none', flexShrink: 0,
