@@ -165,4 +165,9 @@ export const api = {
   updateRule:  (id, data) => request('PUT',    `/rules/${id}`, data),
   deleteRule:  (id)       => request('DELETE', `/rules/${id}`),
   reorderRules:(ids)      => request('PATCH',  '/rules/reorder', { ids }),
+
+  // Block List
+  getBlockList:          ()      => request('GET',    '/block-list'),
+  addToBlockList:        (email) => request('POST',   '/block-list', { emailAddress: email }),
+  removeFromBlockList:   (id)    => request('DELETE', `/block-list/${id}`),
 };

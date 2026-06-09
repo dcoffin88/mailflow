@@ -275,6 +275,7 @@
       "custom": "自定义……"
     },
     "createRule": "根据此邮件创建规则",
+    "addToBlockList": "添加到黑名单",
     "copySubject": "复制主题",
     "copySender": "复制发件人地址",
     "viewHeaders": "查看完整邮件头",
@@ -406,7 +407,21 @@
       "saving": "保存中…",
       "errorRequired": "名称、至少一个条件和一个动作为必填项。",
       "errorMoveFolder": "请为「移动」动作指定目标文件夹。",
-      "errorSave": "无法保存规则。"
+      "errorSave": "无法保存规则。",
+      "fieldBody": "正文",
+      "fieldHeader": "邮件头",
+      "opRegex": "匹配正则表达式",
+      "headerNamePlaceholder": "头部名称（如 X-Spam-Status）",
+      "subTabRules": "规则",
+      "subTabBlockList": "黑名单"
+    },
+    "blockList": {
+      "description": "来自已屏蔽发件人的邮件将自动移至垃圾箱。",
+      "empty": "无屏蔽发件人",
+      "emailPlaceholder": "发件人@示例.com",
+      "addButton": "屏蔽",
+      "removeButton": "移除",
+      "errorAdd": "无法添加到黑名单"
     },
     "accounts": {
       "title": "邮箱账户",
@@ -849,5 +864,9 @@
       "sourceCode": "源代码",
       "sponsor": "支持开发"
     }
+  },
+  "blockList": {
+    "blocked": "已屏蔽",
+    "errorAdd": "屏蔽发件人失败"
   }
 }

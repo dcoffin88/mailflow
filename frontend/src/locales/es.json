@@ -275,6 +275,7 @@
       "custom": "Personalizado..."
     },
     "createRule": "Crear regla desde este mensaje",
+    "addToBlockList": "Añadir a la lista de bloqueo",
     "copySubject": "Copiar asunto",
     "copySender": "Copiar dirección del remitente",
     "viewHeaders": "Ver encabezados completos",
@@ -406,7 +407,21 @@
       "saving": "Guardando…",
       "errorRequired": "Se requiere nombre, al menos una condición y una acción.",
       "errorMoveFolder": "Ingresa una carpeta de destino para la acción Mover.",
-      "errorSave": "No se pudo guardar la regla."
+      "errorSave": "No se pudo guardar la regla.",
+      "fieldBody": "Cuerpo",
+      "fieldHeader": "Encabezado",
+      "opRegex": "coincide con regex",
+      "headerNamePlaceholder": "Nombre del encabezado (ej. X-Spam-Status)",
+      "subTabRules": "Reglas",
+      "subTabBlockList": "Lista de bloqueo"
+    },
+    "blockList": {
+      "description": "Los correos de remitentes bloqueados se mueven automáticamente a la papelera.",
+      "empty": "No hay remitentes bloqueados",
+      "emailPlaceholder": "remitente@ejemplo.com",
+      "addButton": "Bloquear",
+      "removeButton": "Eliminar",
+      "errorAdd": "Error al añadir a la lista de bloqueo"
     },
     "accounts": {
       "title": "Cuentas de correo",
@@ -849,5 +864,9 @@
       "sourceCode": "Código fuente",
       "sponsor": "Apoyar el desarrollo"
     }
+  },
+  "blockList": {
+    "blocked": "Bloqueado",
+    "errorAdd": "No se pudo bloquear al remitente"
   }
 }

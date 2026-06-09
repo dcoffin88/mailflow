@@ -9,7 +9,7 @@ import { sendPushToUser } from './pushNotifications.js';
 import { redactEmail } from '../utils/redact.js';
 import { adjustFolderCounts } from '../utils/mailUtils.js';
 import { resolveForConnection } from './hostValidation.js';
-import { applyInboxRules } from './inboxRules.js';
+import { applyInboxRules, applyBlockList } from './inboxRules.js';
 
 
 // Shorthand for log lines — keeps domain visible while masking the local part.
@@ -1077,7 +1077,7 @@ export class ImapManager {
           bodyStructure: true,
           size: true,
           internalDate: true,
-          headerLines: ['references'],
+          headers: true,
         };
         if (provider.fetchBody && !noBodyParts) {
           fetchQuery.bodyParts = BODY_PREFETCH_PARTS;
@@ -1213,6 +1213,11 @@ export class ImapManager {
 
         if (newMessages.length > 0) {
           if (folder === 'INBOX') {
+            try {
+              newMessages = await applyBlockList(newMessages, account, this);
+            } catch (err) {
+              console.error('blockList error:', err.message);
+            }
             try {
               newMessages = await applyInboxRules(newMessages, account, this);
             } catch (err) {
@@ -1488,7 +1493,7 @@ export class ImapManager {
               uid: true, flags: true, envelope: true,
               bodyStructure: true, size: true,
               internalDate: true,
-              headerLines: ['references'],
+              headers: true,
             };
             if (bodyParts.length > 0) bfQuery.bodyParts = bodyParts;
 

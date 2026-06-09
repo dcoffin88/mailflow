@@ -25,6 +25,13 @@ function matchOperator(operator, fieldVal, ruleVal) {
     case 'equals':       return f === r;
     case 'starts_with':  return f.startsWith(r);
     case 'ends_with':    return f.endsWith(r);
+    case 'regex': {
+      try {
+        return new RegExp(ruleVal, 'i').test(fieldVal || '');
+      } catch {
+        return false;
+      }
+    }
     default:             return false;
   }
 }
@@ -48,6 +55,16 @@ function evaluateCondition(cond, msg) {
     }
     case 'has_attachment': {
       return !!msg.hasAttachments;
+    }
+    case 'body': {
+      return matchOperator(operator, msg._bodyText || '', value);
+    }
+    case 'header': {
+      const headerName = (cond.headerName || '').toLowerCase().trim();
+      if (!headerName) return false;
+      const headers = msg.parsedHeaders || {};
+      const headerVal = headers[headerName] || '';
+      return matchOperator(operator, headerVal, value);
     }
     default:
       return false;
@@ -78,6 +95,32 @@ export async function applyInboxRules(messages, account, imapManager) {
   }
   if (!rules.length) return messages;
 
+  // If any rule matches on body, batch-fetch body_text from DB (it's not on the
+  // parsed message object — it was stored to DB during processMsg).
+  const needsBody = rules.some(r =>
+    Array.isArray(r.conditions) && r.conditions.some(c => c.field === 'body')
+  );
+
+  if (needsBody) {
+    const ids = messages.map(m => m.id);
+    try {
+      const res = await query(
+        'SELECT id, body_text FROM messages WHERE id = ANY($1::uuid[])',
+        [ids]
+      );
+      const byId = {};
+      for (const row of res.rows) byId[row.id] = row;
+      for (const msg of messages) {
+        msg._bodyText = byId[msg.id]?.body_text || '';
+      }
+    } catch (err) {
+      console.error('inboxRules: failed to fetch body_text for rules:', err.message);
+    }
+  }
+
+  // parsedHeaders is already present on each msg from messageParser.js — no DB
+  // fetch needed; header conditions can use msg.parsedHeaders directly.
+
   const remaining = [...messages];
   const removedIds = new Set();
 
@@ -102,6 +145,55 @@ export async function applyInboxRules(messages, account, imapManager) {
   }
 
   return remaining.filter(m => !removedIds.has(m.id));
+}
+
+// Moves messages from blocked senders to trash before inbox rules run.
+export async function applyBlockList(messages, account, imapManager) {
+  if (!messages.length) return messages;
+
+  let blockedRows;
+  try {
+    const res = await query(
+      'SELECT email_address FROM block_list WHERE user_id = $1',
+      [account.user_id]
+    );
+    blockedRows = res.rows;
+  } catch (err) {
+    console.error('blockList: failed to load:', err.message);
+    return messages;
+  }
+  if (!blockedRows.length) return messages;
+
+  const blockedSet = new Set(blockedRows.map(r => r.email_address.toLowerCase()));
+  const remaining = [];
+  for (const msg of messages) {
+    if (!blockedSet.has((msg.fromEmail || '').toLowerCase())) {
+      remaining.push(msg);
+      continue;
+    }
+    try {
+      const trashFolder = await resolveTrashFolder(account.id, account.folder_mappings);
+      const allTrashPaths = await resolveAllTrashPaths(account.id, account.folder_mappings);
+      const strategy = getDeleteStrategy(msg.folder, trashFolder, allTrashPaths);
+      if (strategy.action === 'move') {
+        const result = await imapManager.bulkMoveMessages(account, [msg.uid], msg.folder, strategy.destination);
+        if (!result.failed?.length) {
+          await query('UPDATE messages SET folder = $1 WHERE id = $2', [strategy.destination, msg.id]);
+        } else {
+          remaining.push(msg);
+        }
+      } else if (strategy.action === 'expunge') {
+        await imapManager.setFlag(account, msg.uid, msg.folder, '\\Deleted', true);
+        await query('UPDATE messages SET is_deleted = true WHERE id = $1', [msg.id]);
+      } else {
+        remaining.push(msg);
+      }
+    } catch (err) {
+      console.error(`blockList: failed to move msg ${msg.id}:`, err.message);
+      remaining.push(msg);
+    }
+  }
+  return remaining;
 }
 
 async function applyAction(action, msg, account, imapManager) {

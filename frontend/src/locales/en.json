@@ -275,6 +275,7 @@
       "custom": "Custom..."
     },
     "createRule": "Create rule from message",
+    "addToBlockList": "Add to block list",
     "copySubject": "Copy subject",
     "copySender": "Copy sender's address",
     "viewHeaders": "View full headers",
@@ -387,12 +388,18 @@
       "fieldFrom": "From",
       "fieldTo": "To",
       "fieldSubject": "Subject",
+      "fieldBody": "Body",
+      "fieldHeader": "Header",
       "fieldHasAttachment": "Has attachment",
       "opContains": "contains",
       "opNotContains": "does not contain",
       "opEquals": "is exactly",
       "opStartsWith": "starts with",
       "opEndsWith": "ends with",
+      "opRegex": "matches regex",
+      "headerNamePlaceholder": "Header name (e.g. X-Spam-Status)",
+      "subTabRules": "Rules",
+      "subTabBlockList": "Block List",
       "actionsLabel": "Actions",
       "actionMarkRead": "Mark as read",
       "actionStar": "Star",
@@ -407,6 +414,14 @@
       "errorRequired": "Rule name and at least one condition and action are required.",
       "errorMoveFolder": "Please enter a destination folder for the Move action.",
       "errorSave": "Failed to save rule."
+    },
+    "blockList": {
+      "description": "Emails from blocked senders are automatically moved to trash.",
+      "empty": "No blocked senders",
+      "emailPlaceholder": "sender@example.com",
+      "addButton": "Block",
+      "removeButton": "Remove",
+      "errorAdd": "Failed to add to block list"
     },
     "accounts": {
       "title": "Email accounts",
@@ -849,5 +864,9 @@
       "sourceCode": "Source code",
       "sponsor": "Support development"
     }
+  },
+  "blockList": {
+    "blocked": "Blocked",
+    "errorAdd": "Failed to block sender"
   }
 }

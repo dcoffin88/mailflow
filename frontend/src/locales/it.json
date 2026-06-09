@@ -275,6 +275,7 @@
       "custom": "Personalizzato..."
     },
     "createRule": "Crea regola da questo messaggio",
+    "addToBlockList": "Aggiungi alla lista blocchi",
     "copySubject": "Copia oggetto",
     "copySender": "Copia indirizzo mittente",
     "viewHeaders": "Visualizza intestazioni complete",
@@ -406,7 +407,21 @@
       "saving": "Salvataggio…",
       "errorRequired": "Nome, almeno una condizione e un'azione sono obbligatori.",
       "errorMoveFolder": "Inserisci una cartella di destinazione per l'azione Sposta.",
-      "errorSave": "Impossibile salvare la regola."
+      "errorSave": "Impossibile salvare la regola.",
+      "fieldBody": "Corpo",
+      "fieldHeader": "Intestazione",
+      "opRegex": "corrisponde a regex",
+      "headerNamePlaceholder": "Nome intestazione (es. X-Spam-Status)",
+      "subTabRules": "Regole",
+      "subTabBlockList": "Lista blocchi"
+    },
+    "blockList": {
+      "description": "Le e-mail dei mittenti bloccati vengono automaticamente spostate nel cestino.",
+      "empty": "Nessun mittente bloccato",
+      "emailPlaceholder": "mittente@esempio.com",
+      "addButton": "Blocca",
+      "removeButton": "Rimuovi",
+      "errorAdd": "Impossibile aggiungere alla lista blocchi"
     },
     "accounts": {
       "title": "Account email",
@@ -849,5 +864,9 @@
       "sourceCode": "Codice sorgente",
       "sponsor": "Supporta lo sviluppo"
     }
+  },
+  "blockList": {
+    "blocked": "Bloccato",
+    "errorAdd": "Impossibile bloccare il mittente"
   }
 }

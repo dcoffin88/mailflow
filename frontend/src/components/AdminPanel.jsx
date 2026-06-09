@@ -4049,9 +4049,11 @@ function RulesTab() {
   }
 
   const FIELDS = [
-    { value: 'from', label: t('admin.rules.fieldFrom') },
-    { value: 'to', label: t('admin.rules.fieldTo') },
-    { value: 'subject', label: t('admin.rules.fieldSubject') },
+    { value: 'from',           label: t('admin.rules.fieldFrom') },
+    { value: 'to',             label: t('admin.rules.fieldTo') },
+    { value: 'subject',        label: t('admin.rules.fieldSubject') },
+    { value: 'body',           label: t('admin.rules.fieldBody') },
+    { value: 'header',         label: t('admin.rules.fieldHeader') },
     { value: 'has_attachment', label: t('admin.rules.fieldHasAttachment') },
   ];
   const OPERATORS = [
@@ -4061,6 +4063,7 @@ function RulesTab() {
     { value: 'starts_with',  label: t('admin.rules.opStartsWith') },
     { value: 'ends_with',    label: t('admin.rules.opEndsWith') },
   ];
+  const HEADER_OPERATORS = [...OPERATORS, { value: 'regex', label: t('admin.rules.opRegex') }];
   const ACTION_TYPES = [
     { type: 'mark_read', label: t('admin.rules.actionMarkRead') },
     { type: 'star',      label: t('admin.rules.actionStar') },
@@ -4121,37 +4124,62 @@ function RulesTab() {
 
         <Field label={t('admin.rules.conditionsLabel')} required>
           {fd.conditions.map((cond, idx) => (
-            <div key={idx} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-              <select
-                style={{ ...inputStyle, width: 'auto', flex: '0 0 auto' }}
-                value={cond.field}
-                onChange={e => setCondition(idx, 'field', e.target.value)}
-              >
-                {FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-              </select>
-              {cond.field !== 'has_attachment' && (
-                <>
-                  <select
-                    style={{ ...inputStyle, width: 'auto', flex: '0 0 auto' }}
-                    value={cond.operator}
-                    onChange={e => setCondition(idx, 'operator', e.target.value)}
-                  >
-                    {OPERATORS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                  <input
-                    style={{ ...inputStyle, flex: 1 }}
-                    value={cond.value}
-                    onChange={e => setCondition(idx, 'value', e.target.value)}
-                    placeholder="value"
-                  />
-                </>
+            <div key={idx} style={{ marginBottom: 6 }}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <select
+                  style={{ ...inputStyle, width: 'auto', flex: '0 0 auto' }}
+                  value={cond.field}
+                  onChange={e => {
+                    const newField = e.target.value;
+                    setFormData(prev => {
+                      const conditions = prev.conditions.map((c, i) => {
+                        if (i !== idx) return c;
+                        const next = { ...c, field: newField };
+                        if (newField !== 'header') delete next.headerName;
+                        if (newField === 'has_attachment') { delete next.operator; delete next.value; }
+                        else if (!next.operator) next.operator = 'contains';
+                        return next;
+                      });
+                      return { ...prev, conditions };
+                    });
+                  }}
+                >
+                  {FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select>
+                {cond.field !== 'has_attachment' && (
+                  <>
+                    <select
+                      style={{ ...inputStyle, width: 'auto', flex: '0 0 auto' }}
+                      value={cond.operator || 'contains'}
+                      onChange={e => setCondition(idx, 'operator', e.target.value)}
+                    >
+                      {(cond.field === 'header' ? HEADER_OPERATORS : OPERATORS).map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                    <input
+                      style={{ ...inputStyle, flex: 1 }}
+                      value={cond.value || ''}
+                      onChange={e => setCondition(idx, 'value', e.target.value)}
+                      placeholder="value"
+                    />
+                  </>
+                )}
+                <button
+                  onClick={() => removeCondition(idx)}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 16, padding: '0 4px', flexShrink: 0 }}
+                >
+                  ×
+                </button>
+              </div>
+              {cond.field === 'header' && (
+                <input
+                  style={{ ...inputStyle, marginTop: 4, marginLeft: 0, fontSize: 12 }}
+                  value={cond.headerName || ''}
+                  onChange={e => setCondition(idx, 'headerName', e.target.value)}
+                  placeholder={t('admin.rules.headerNamePlaceholder')}
+                />
               )}
-              <button
-                onClick={() => removeCondition(idx)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 16, padding: '0 4px', flexShrink: 0 }}
-              >
-                ×
-              </button>
             </div>
           ))}
           <button
@@ -4287,6 +4315,96 @@ function RulesTab() {
         </div>
       ))}
     </div>
+  );
+}
+
+// ─── Block List Tab ────────────────────────────────────────────────────────────
+function BlockListTab() {
+  const { t } = useTranslation();
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newEmail, setNewEmail] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api.getBlockList()
+      .then(data => { setEntries(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  async function handleAdd(e) {
+    e.preventDefault();
+    const email = newEmail.trim();
+    if (!email) return;
+    setAdding(true);
+    setError('');
+    try {
+      const entry = await api.addToBlockList(email);
+      setEntries(prev => [entry, ...prev]);
+      setNewEmail('');
+    } catch (_) {
+      setError(t('admin.blockList.errorAdd'));
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function handleRemove(id) {
+    try {
+      await api.removeFromBlockList(id);
+      setEntries(prev => prev.filter(e => e.id !== id));
+    } catch (_) {}
+  }
+
+  return (
+    <div>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 0, marginBottom: 16 }}>
+        {t('admin.blockList.description')}
+      </p>
+      <form onSubmit={handleAdd} style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <input
+          style={{ ...inputStyle, flex: 1 }}
+          type="email"
+          value={newEmail}
+          onChange={e => setNewEmail(e.target.value)}
+          placeholder={t('admin.blockList.emailPlaceholder')}
+        />
+        <button
+          type="submit"
+          disabled={adding || !newEmail.trim()}
+          style={{ padding: '8px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 600, fontSize: 13, cursor: adding ? 'not-allowed' : 'pointer', opacity: adding ? 0.7 : 1, flexShrink: 0 }}
+        >
+          {t('admin.blockList.addButton')}
+        </button>
+      </form>
+      {error && <div style={{ color: 'var(--red)', fontSize: 12, marginBottom: 12 }}>{error}</div>}
+      {loading && <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{t('common.loading')}</div>}
+      {!loading && entries.length === 0 && (
+        <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{t('admin.blockList.empty')}</div>
+      )}
+      {entries.map(entry => (
+        <div key={entry.id} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', marginBottom: 6 }}>
+          <span style={{ flex: 1, fontSize: 13, fontFamily: 'monospace', wordBreak: 'break-all' }}>{entry.email_address}</span>
+          <button
+            onClick={() => handleRemove(entry.id)}
+            style={{ padding: '4px 10px', background: 'none', border: '1px solid var(--red)', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: 'var(--red)', flexShrink: 0 }}
+          >
+            {t('admin.blockList.removeButton')}
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RulesAndBlockListTab() {
+  const { t } = useTranslation();
+  return (
+    <SubTabs tabs={[
+      { id: 'rules',      label: t('admin.rules.subTabRules'),     content: <RulesTab /> },
+      { id: 'block-list', label: t('admin.rules.subTabBlockList'), content: <BlockListTab /> },
+    ]} />
   );
 }
 
@@ -5477,7 +5595,7 @@ export default function AdminPanel() {
           }}
         >
           {adminTab === 'accounts' && <AccountsTab />}
-          {adminTab === 'rules' && <RulesTab />}
+          {adminTab === 'rules' && <RulesAndBlockListTab />}
           {adminTab === 'appearance' && <AppearanceTab />}
           {adminTab === 'integrations' && <IntegrationsTab />}
           {adminTab === 'users' && <UsersTab />}
@@ -5574,7 +5692,7 @@ export default function AdminPanel() {
           }}
         >
           {adminTab === 'accounts' && <AccountsTab />}
-          {adminTab === 'rules' && <RulesTab />}
+          {adminTab === 'rules' && <RulesAndBlockListTab />}
           {adminTab === 'appearance' && <AppearanceTab />}
           {adminTab === 'integrations' && <IntegrationsTab />}
           {adminTab === 'users' && <UsersTab />}

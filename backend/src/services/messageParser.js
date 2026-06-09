@@ -143,6 +143,25 @@ function decodeBodyPart(buf, encoding, charset) {
   }
 }
 
+// Parse a raw header Buffer (from imapflow's `headers: true`) into a plain object.
+// Header names are lowercased. Multiple values for the same header are joined with '\n'.
+export function parseRawHeaders(buf) {
+  if (!buf) return {};
+  const text = Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf);
+  const result = {};
+  // Headers can be folded (continuation lines start with whitespace)
+  const unfolded = text.replace(/\r\n([ \t])/g, ' ').replace(/\n([ \t])/g, ' ');
+  for (const line of unfolded.split(/\r?\n/)) {
+    const colon = line.indexOf(':');
+    if (colon < 1) continue;
+    const name = line.slice(0, colon).toLowerCase().trim();
+    const val = line.slice(colon + 1).trim();
+    if (!name) continue;
+    result[name] = result[name] ? result[name] + '\n' + val : val;
+  }
+  return result;
+}
+
 export async function parseMessage(msg) {
   const envelope = msg.envelope || {};
   const flags = msg.flags ? [...msg.flags] : [];
@@ -223,7 +242,15 @@ export async function parseMessage(msg) {
     cc: mapAddrs(envelope.cc),
     replyTo: mapAddrs(envelope.replyTo),
     inReplyTo: envelope.inReplyTo || null,
-    references: msg.headers?.get('references') || null,
+    references: (() => {
+      if (msg.headers && typeof msg.headers.get === 'function') return msg.headers.get('references') || null;
+      if (msg.headers && Buffer.isBuffer(msg.headers)) {
+        const parsed = parseRawHeaders(msg.headers);
+        return parsed['references'] || null;
+      }
+      return null;
+    })(),
+    parsedHeaders: msg.headers && Buffer.isBuffer(msg.headers) ? parseRawHeaders(msg.headers) : {},
     date: msg.internalDate || envelope.date || new Date(),
     snippet,
     isRead,

@@ -275,6 +275,7 @@
       "custom": "Personnalisé..."
     },
     "createRule": "Créer une règle depuis ce message",
+    "addToBlockList": "Ajouter à la liste de blocage",
     "copySubject": "Copier l'objet",
     "copySender": "Copier l'adresse de l'expéditeur",
     "viewHeaders": "Voir les en-têtes complets",
@@ -406,7 +407,21 @@
       "saving": "Enregistrement…",
       "errorRequired": "Nom, au moins une condition et une action sont requis.",
       "errorMoveFolder": "Veuillez entrer un dossier de destination pour l'action Déplacer.",
-      "errorSave": "Impossible d'enregistrer la règle."
+      "errorSave": "Impossible d'enregistrer la règle.",
+      "fieldBody": "Corps",
+      "fieldHeader": "En-tête",
+      "opRegex": "correspond à l'expression régulière",
+      "headerNamePlaceholder": "Nom de l'en-tête (ex. X-Spam-Status)",
+      "subTabRules": "Règles",
+      "subTabBlockList": "Liste de blocage"
+    },
+    "blockList": {
+      "description": "Les e-mails des expéditeurs bloqués sont automatiquement déplacés vers la corbeille.",
+      "empty": "Aucun expéditeur bloqué",
+      "emailPlaceholder": "expéditeur@exemple.com",
+      "addButton": "Bloquer",
+      "removeButton": "Supprimer",
+      "errorAdd": "Impossible d'ajouter à la liste de blocage"
     },
     "accounts": {
       "title": "Comptes e-mail",
@@ -849,5 +864,9 @@
       "sourceCode": "Code source",
       "sponsor": "Soutenir le développement"
     }
+  },
+  "blockList": {
+    "blocked": "Bloqué",
+    "errorAdd": "Impossible de bloquer l'expéditeur"
   }
 }

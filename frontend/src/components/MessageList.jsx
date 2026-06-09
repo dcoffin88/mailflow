@@ -1547,6 +1547,16 @@ export default function MessageList() {
         store.setShowAdmin(true);
         break;
       }
+      case 'addToBlockList': {
+        const email = message.from_email;
+        if (!email) break;
+        api.addToBlockList(email).then(() => {
+          addNotification({ title: t('blockList.blocked'), body: email });
+        }).catch(() => {
+          addNotification({ title: t('blockList.errorAdd'), body: email });
+        });
+        break;
+      }
       case 'delete':
         if (selectedIds.size > 1 && selectedIds.has(message.id)) {
           const bulkMsgs = displayMessages.filter(m => selectedIds.has(m.id));

@@ -292,7 +292,8 @@
       "recent": "Zuletzt verwendet",
       "favorites": "Favoriten"
     },
-    "createRule": "Regel aus Nachricht erstellen"
+    "createRule": "Regel aus Nachricht erstellen",
+    "addToBlockList": "Zur Blockliste hinzufügen"
   },
   "commandPalette": {
     "placeholder": "Aktionen suchen…",
@@ -847,7 +848,25 @@
       "namePlaceholder": "z. B. Newsletter verschieben",
       "opContains": "enthält",
       "actionMarkRead": "Als gelesen markieren",
-      "fieldFrom": "Von"
+      "fieldFrom": "Von",
+      "fieldBody": "Text",
+      "fieldHeader": "Header",
+      "opRegex": "entspricht Regex",
+      "headerNamePlaceholder": "Header-Name (z. B. X-Spam-Status)",
+      "subTabRules": "Regeln",
+      "subTabBlockList": "Blockliste"
+    },
+    "blockList": {
+      "description": "E-Mails von blockierten Absendern werden automatisch in den Papierkorb verschoben.",
+      "empty": "Keine blockierten Absender",
+      "emailPlaceholder": "absender@beispiel.de",
+      "addButton": "Blockieren",
+      "removeButton": "Entfernen",
+      "errorAdd": "Fehler beim Hinzufügen zur Blockliste"
     }
+  },
+  "blockList": {
+    "blocked": "Blockiert",
+    "errorAdd": "Absender konnte nicht blockiert werden"
   }
 }
