@@ -6,7 +6,7 @@ import { query } from '../services/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { imapManager } from '../index.js';
 import { sanitizeEmail, stripEmailHead, hasRemoteImages, blockRemoteImages, rewriteEbayImageserUrls } from '../services/emailSanitizer.js';
-import { buildSnippetFromHtml, decodeNamedEntity } from '../services/messageParser.js';
+import { buildSnippetFromHtml, decodeNamedEntity, INVISIBLE_CHARS_RE } from '../services/messageParser.js';
 import { resolveTrashFolder, resolveAllTrashPaths, resolveArchiveFolder, getDeleteStrategy, adjustFolderCounts } from '../utils/mailUtils.js';
 import { listMessages } from '../services/messageService.js';
 
@@ -58,15 +58,6 @@ async function runInBatches(items, concurrency, fn) {
 }
 
 
-// Regex matching invisible / zero-width / filler Unicode chars — kept in sync with
-// the same constant in messageParser.js (must match the full set used there).
-const INVISIBLE_CHARS_RE = new RegExp(
-  [0x00AD, 0x034F, 0x200B, 0x200C, 0x200D, 0x200E, 0x200F,
-   0x2007, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0xFEFF]
-    .map(n => String.fromCodePoint(n)).join('|'),
-  'g'
-);
-
 // Returns true if a snippet contains content that should never appear in plain-text
 // preview, indicating it was generated from unclean HTML and needs regeneration:
 //   - &entity; — undecoded HTML entities from before the entity-stripping fix
@@ -100,6 +91,8 @@ function snippetFromBody(text, html) {
 // Get messages (unified or per-account/folder)
 router.get('/messages', async (req, res) => {
   const { accountId, folder = 'INBOX', limit = 50, offset = 0, unreadOnly, threaded } = req.query;
+
+  if (!isValidFolderName(folder)) return res.status(400).json({ error: 'Invalid folder name' });
 
   const { messages, total, threaded: isThreaded, resolvedAccountId } = await listMessages({
     userId: req.session.userId,
@@ -141,43 +134,48 @@ router.get('/thread/:threadId', async (req, res) => {
 
   const { folder } = req.query;
 
-  const accountsResult = await query(
-    'SELECT id FROM email_accounts WHERE user_id = $1 AND enabled = true',
-    [req.session.userId]
-  );
-  const userAccountIds = accountsResult.rows.map(r => r.id);
-  if (!userAccountIds.length) return res.json({ messages: [] });
+  try {
+    const accountsResult = await query(
+      'SELECT id FROM email_accounts WHERE user_id = $1 AND enabled = true',
+      [req.session.userId]
+    );
+    const userAccountIds = accountsResult.rows.map(r => r.id);
+    if (!userAccountIds.length) return res.json({ messages: [] });
 
-  // Only restrict expansion to INBOX when viewing the INBOX — ensures the expansion
-  // matches what the list shows. For All Mail and any other folder show all messages
-  // regardless of which folder they were synced under (All Mail backfill is skipped so
-  // not every message has a [Gmail]/All Mail row in the DB).
-  const folderFilter = (folder === 'INBOX') ? `AND m.folder = $3` : '';
-  const params = (folder === 'INBOX') ? [userAccountIds, threadId, folder] : [userAccountIds, threadId];
+    // Only restrict expansion to INBOX when viewing the INBOX — ensures the expansion
+    // matches what the list shows. For All Mail and any other folder show all messages
+    // regardless of which folder they were synced under (All Mail backfill is skipped so
+    // not every message has a [Gmail]/All Mail row in the DB).
+    const folderFilter = (folder === 'INBOX') ? `AND m.folder = $3` : '';
+    const params = (folder === 'INBOX') ? [userAccountIds, threadId, folder] : [userAccountIds, threadId];
 
-  const result = await query(`
-    WITH deduped AS (
-      SELECT DISTINCT ON (m.message_id)
-             m.id, m.uid, m.folder, m.message_id, m.thread_id, m.subject,
-             m.from_name, m.from_email, m.to_addresses, m.cc_addresses,
-             m.reply_to, m.in_reply_to,
-             m.date, m.snippet, m.is_read, m.is_starred,
-             m.has_attachments, m.account_id,
-             a.name AS account_name, a.email_address AS account_email, a.color AS account_color
-      FROM messages m
-      JOIN email_accounts a ON m.account_id = a.id
-      WHERE m.is_deleted = false
-        AND m.account_id = ANY($1)
-        AND m.thread_key = $2
-        ${folderFilter}
-      ORDER BY m.message_id,
-               CASE WHEN m.folder = 'INBOX' THEN 0 ELSE 1 END,
-               m.date ASC
-    )
-    SELECT * FROM deduped ORDER BY date ASC
-  `, params);
+    const result = await query(`
+      WITH deduped AS (
+        SELECT DISTINCT ON (m.message_id)
+               m.id, m.uid, m.folder, m.message_id, m.thread_id, m.subject,
+               m.from_name, m.from_email, m.to_addresses, m.cc_addresses,
+               m.reply_to, m.in_reply_to,
+               m.date, m.snippet, m.is_read, m.is_starred,
+               m.has_attachments, m.account_id,
+               a.name AS account_name, a.email_address AS account_email, a.color AS account_color
+        FROM messages m
+        JOIN email_accounts a ON m.account_id = a.id
+        WHERE m.is_deleted = false
+          AND m.account_id = ANY($1)
+          AND m.thread_key = $2
+          ${folderFilter}
+        ORDER BY m.message_id,
+                 CASE WHEN m.folder = 'INBOX' THEN 0 ELSE 1 END,
+                 m.date ASC
+      )
+      SELECT * FROM deduped ORDER BY date ASC
+    `, params);
 
-  res.json({ messages: result.rows });
+    res.json({ messages: result.rows });
+  } catch (err) {
+    console.error('Thread fetch error:', err);
+    res.status(500).json({ error: 'Failed to load thread' });
+  }
 });
 
 // Unread counts
@@ -609,8 +607,8 @@ router.post('/mark-all-read', async (req, res) => {
   imapManager.markAllReadImap(check.rows[0], folder).catch(err =>
     console.warn('markAllReadImap failed:', err.message)
   );
-  res.json({ ok: true });
   imapManager.broadcast({ type: 'sync_complete', accountId }, check.rows[0].user_id);
+  res.json({ ok: true });
 });
 
 // Create folder
@@ -712,8 +710,8 @@ router.post('/folders/empty', async (req, res) => {
     'UPDATE folders SET total_count = 0, unread_count = 0 WHERE account_id = $1 AND path = $2',
     [accountId, path]
   );
-  res.json({ ok: true });
   imapManager.broadcast({ type: 'sync_complete', accountId }, check.rows[0].user_id);
+  res.json({ ok: true });
 });
 
 // Bulk mark read/unread

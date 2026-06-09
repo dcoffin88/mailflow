@@ -4,7 +4,7 @@
 // U+200C ZWNJ, U+200D ZWJ, U+200E LTR mark, U+200F RTL mark,
 // U+2007 figure space, U+2060 word joiner, U+2061-U+2064 invisible operators,
 // U+FEFF BOM / zero-width no-break space.
-const INVISIBLE_CHARS_RE = new RegExp(
+export const INVISIBLE_CHARS_RE = new RegExp(
   [0x00AD, 0x034F, 0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0x2007, 0x2060, 0x2061, 0x2062, 0x2063, 0x2064, 0xFEFF]
     .map(n => String.fromCodePoint(n)).join('|'),
   'g'

@@ -26,6 +26,11 @@ function matchOperator(operator, fieldVal, ruleVal) {
     case 'starts_with':  return f.startsWith(r);
     case 'ends_with':    return f.endsWith(r);
     case 'regex': {
+      // Guard against ReDoS: reject overly long patterns and known catastrophic
+      // backtracking constructs (nested quantifiers like (a+)+, (a|a)+, etc.)
+      // before compiling, since user-supplied patterns run on every incoming message.
+      if (!ruleVal || ruleVal.length > 200) return false;
+      if (/(\(.*[+*]\).*[+*]|\(.*\|.*\).*[+*])/.test(ruleVal)) return false;
       try {
         return new RegExp(ruleVal, 'i').test(fieldVal || '');
       } catch {
@@ -112,6 +117,9 @@ export async function applyInboxRules(messages, account, imapManager) {
       for (const row of res.rows) byId[row.id] = row;
       for (const msg of messages) {
         msg._bodyText = byId[msg.id]?.body_text || '';
+        if (!msg._bodyText) {
+          console.warn(`inboxRules: body_text not yet available for message ${msg.id} — body rules will not match (account uses lazy body fetch)`);
+        }
       }
     } catch (err) {
       console.error('inboxRules: failed to fetch body_text for rules:', err.message);

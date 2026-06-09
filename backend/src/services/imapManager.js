@@ -578,10 +578,14 @@ export class ImapManager {
     this._healthCheckTimer = setInterval(async () => {
       try {
         const result = await query(
-          "SELECT * FROM email_accounts WHERE enabled = true AND protocol = 'imap'"
+          "SELECT id FROM email_accounts WHERE enabled = true AND protocol = 'imap'"
         );
-        for (const account of result.rows) {
-          if (!this.connections.has(account.id) && !this.connectingAccounts.has(account.id)) {
+        for (const row of result.rows) {
+          if (!this.connections.has(row.id) && !this.connectingAccounts.has(row.id)) {
+            // Only fetch full credentials when a reconnect is actually needed
+            const full = await query('SELECT * FROM email_accounts WHERE id = $1', [row.id]);
+            const account = full.rows[0];
+            if (!account) continue;
             console.log(`Health check: reconnecting ${logAccount(account)} (not connected)`);
             this.connectAccount(account).catch(err =>
               console.error(`Health check reconnect failed for ${logAccount(account)}:`, err.message)
@@ -1829,9 +1833,6 @@ export class ImapManager {
     }
   }
 
-  // Syncs the most recent messages in a specific folder on demand.
-  // Called when the user navigates to a folder that has no local messages yet.
-  // Uses a pooled connection — does NOT touch the main sync connection.
   async appendToSent(account, folder, rawMessage) {
     await withFreshClient(account, async (client) => {
       const result = await client.append(folder, rawMessage, ['\\Seen']);
@@ -1840,6 +1841,9 @@ export class ImapManager {
     console.log(`Appended sent message to IMAP ${logAccount(account)}/${folder}`);
   }
 
+  // Syncs the most recent messages in a specific folder on demand.
+  // Called when the user navigates to a folder that has no local messages yet.
+  // Uses a pooled connection — does NOT touch the main sync connection.
   async syncFolderOnDemand(account, folder) {
     const key = `${account.id}:${folder}`;
     if (this.onDemandSyncing.has(key)) {
@@ -2685,12 +2689,12 @@ export class ImapManager {
         // Update DB: change folder, mark unread, and update UID if the move returned one.
         if (newUid != null) {
           await query(
-            'UPDATE messages SET folder = $1, is_read = false, uid = $4 WHERE account_id = $2 AND message_id = $3',
+            'UPDATE messages SET folder = $1, is_read = false, read_changed_at = NOW(), uid = $4 WHERE account_id = $2 AND message_id = $3',
             [row.original_folder, row.account_id, row.message_id_header, newUid]
           );
         } else {
           await query(
-            'UPDATE messages SET folder = $1, is_read = false WHERE account_id = $2 AND message_id = $3',
+            'UPDATE messages SET folder = $1, is_read = false, read_changed_at = NOW() WHERE account_id = $2 AND message_id = $3',
             [row.original_folder, row.account_id, row.message_id_header]
           );
         }

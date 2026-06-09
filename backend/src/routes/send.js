@@ -232,7 +232,8 @@ router.post('/send', async (req, res) => {
     const transport = nodemailer.createTransport({
       host: smtpResolved.host,
       port: account.smtp_port,
-      secure: account.smtp_port === 465,
+      secure: account.smtp_tls === 'SSL',
+      ...(account.smtp_tls === 'none' ? { ignoreTLS: true } : {}),
       auth: smtpAuth,
       tls: smtpTls,
     });
@@ -297,45 +298,42 @@ router.post('/send', async (req, res) => {
     await transport.sendMail(mailOptions);
 
     // Get the Sent folder path (manual mapping takes priority over special_use auto-detect)
-    const imapManager = req.app.get('imapManager');
-    if (imapManager) {
-      let sentFolder = account.folder_mappings?.sent || null;
-      if (!sentFolder) {
-        const folderResult = await query(
-          "SELECT path FROM folders WHERE account_id = $1 AND special_use = '\\Sent' LIMIT 1",
-          [accountId]
-        );
-        sentFolder = folderResult.rows[0]?.path || null;
-      }
-      console.log(`Post-send: ${redactEmail(account.email_address)} sentFolder=${sentFolder} autoSaves=${serverAutoSaves}`);
+    let sentFolder = account.folder_mappings?.sent || null;
+    if (!sentFolder) {
+      const folderResult = await query(
+        "SELECT path FROM folders WHERE account_id = $1 AND special_use = '\\Sent' LIMIT 1",
+        [accountId]
+      );
+      sentFolder = folderResult.rows[0]?.path || null;
+    }
+    console.log(`Post-send: ${redactEmail(account.email_address)} sentFolder=${sentFolder} autoSaves=${serverAutoSaves}`);
 
-      if (sentFolder) {
-        if (rawMessage) {
-          // APPEND directly to IMAP Sent, then run a sync to pull it into the DB
-          imapManager.appendToSent(account, sentFolder, rawMessage)
-            .then(() => {
-              setTimeout(() => {
-                imapManager.syncFolderOnDemand(account, sentFolder)
-                  .then(() => console.log(`Post-append sync done: ${redactEmail(account.email_address)}/${sentFolder}`))
-                  .catch(e => console.error(`Post-append sync failed: ${e.message}`));
-              }, 1000);
-            })
-            .catch(err => {
-              console.error(`IMAP append failed for ${redactEmail(account.email_address)}/${sentFolder}: ${err.message}`);
-              // Fall back to delayed sync
-              setTimeout(() => {
-                imapManager.syncFolderOnDemand(account, sentFolder)
-                  .catch(e => console.error(`Fallback sync failed: ${e.message}`));
-              }, 5000);
-            });
-        } else {
-          // Server auto-saves via SMTP; just sync after a delay
-          const syncAttempt = (label) => imapManager.syncFolderOnDemand(account, sentFolder)
-            .then(() => console.log(`Post-send ${label} sync done: ${redactEmail(account.email_address)}/${sentFolder}`))
-            .catch(e => console.error(`Post-send ${label} sync failed: ${e.message}`));
-          setTimeout(() => syncAttempt('3s'), 3000);
-          setTimeout(() => syncAttempt('15s'), 15000);
-        }
+    if (sentFolder) {
+      if (rawMessage) {
+        // APPEND directly to IMAP Sent, then run a sync to pull it into the DB
+        imapManager.appendToSent(account, sentFolder, rawMessage)
+          .then(() => {
+            setTimeout(() => {
+              imapManager.syncFolderOnDemand(account, sentFolder)
+                .then(() => console.log(`Post-append sync done: ${redactEmail(account.email_address)}/${sentFolder}`))
+                .catch(e => console.error(`Post-append sync failed: ${e.message}`));
+            }, 1000);
+          })
+          .catch(err => {
+            console.error(`IMAP append failed for ${redactEmail(account.email_address)}/${sentFolder}: ${err.message}`);
+            // Fall back to delayed sync
+            setTimeout(() => {
+              imapManager.syncFolderOnDemand(account, sentFolder)
+                .catch(e => console.error(`Fallback sync failed: ${e.message}`));
+            }, 5000);
+          });
+      } else {
+        // Server auto-saves via SMTP; just sync after a delay
+        const syncAttempt = (label) => imapManager.syncFolderOnDemand(account, sentFolder)
+          .then(() => console.log(`Post-send ${label} sync done: ${redactEmail(account.email_address)}/${sentFolder}`))
+          .catch(e => console.error(`Post-send ${label} sync failed: ${e.message}`));
+        setTimeout(() => syncAttempt('3s'), 3000);
+        setTimeout(() => syncAttempt('15s'), 15000);
       }
     }
 
