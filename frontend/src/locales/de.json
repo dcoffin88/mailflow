@@ -211,7 +211,17 @@
     "emptyInboxDesc": "Keine ungelesenen Nachrichten",
     "composeAriaLabel": "Neue Nachricht verfassen",
     "noAccounts": "Noch keine Konten",
-    "noAccountsDesc": "E-Mail-Konto hinzufügen, um loszulegen"
+    "noAccountsDesc": "E-Mail-Konto hinzufügen, um loszulegen",
+    "foldersHeading": "Ordner"
+  },
+  "lockScreen": {
+    "subtitle": "Passwort eingeben, um zu entsperren",
+    "passwordPlaceholder": "Passwort",
+    "unlockButton": "Entsperren",
+    "unlocking": "Wird entsperrt…",
+    "wrongPassword": "Falsches Passwort",
+    "signOut": "Abmelden",
+    "signingOut": "Wird abgemeldet…"
   },
   "sidebar": {
     "allInboxes": "Alle Posteingänge",
@@ -224,6 +234,7 @@
     "hideHidden": "Ausgeblendete Ordner verbergen",
     "blockImages": "Bilder blockieren",
     "settings": "Einstellungen",
+    "lock": "Sperren",
     "signOut": "Abmelden",
     "connectionError": "Verbindungsfehler",
     "folderMenu": {

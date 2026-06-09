@@ -251,7 +251,7 @@ export default function Sidebar() {
   const {
     accounts, unreadCounts, selectedAccountId, selectedFolder,
     setSelectedAccount, setShowAdmin, setAdminTab, openCompose,
-    folders, setFolders, setAccounts, user, setUser, sidebarCollapsed: sidebarCollapsedPref, toggleSidebar,
+    folders, setFolders, setAccounts, user, setUser, setLocked, sidebarCollapsed: sidebarCollapsedPref, toggleSidebar,
     blockRemoteImages, setBlockRemoteImages, setMobileSidebarOpen, addNotification,
     hiddenFolders, setHiddenFolders,
     favoriteFolders, addFavoriteFolder, removeFavoriteFolder, renameFavoriteFolder, reorderFavoriteFolders,
@@ -1399,6 +1399,29 @@ export default function Sidebar() {
             </svg>
           </div>
 
+          {/* Lock */}
+          {user?.hasPassword && (
+            <div
+              onClick={() => { setMobileSidebarOpen(false); setLocked(true); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 14px', cursor: 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+              onTouchStart={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+              onTouchEnd={e => e.currentTarget.style.background = ''}
+              onTouchCancel={e => e.currentTarget.style.background = ''}
+            >
+              <span style={{ color: 'var(--text-tertiary)', display: 'flex', flexShrink: 0 }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                  <rect x="3" y="11" width="18" height="11" rx="2"/>
+                  <path d="M7 11V7a5 5 0 0110 0v4"/>
+                </svg>
+              </span>
+              <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)' }}>{t('sidebar.lock')}</span>
+            </div>
+          )}
+
           {/* Sign out */}
           <div
             onClick={handleLogout}
@@ -1534,6 +1557,13 @@ export default function Sidebar() {
             onClick={() => { setUserMenuOpen(false); setShowProfile(true); }} />
           <CtxMenuItem icon={ICONS.settings} label={t('sidebar.settings')}
             onClick={() => { setAdminTab('accounts'); setShowAdmin(true); setUserMenuOpen(false); }} />
+          {user?.hasPassword && (
+            <CtxMenuItem
+              icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>}
+              label={t('sidebar.lock')}
+              onClick={() => { setUserMenuOpen(false); setLocked(true); }}
+            />
+          )}
           <CtxMenuItem icon={ICONS.logout} label={t('sidebar.signOut')} danger
             onClick={() => { setUserMenuOpen(false); handleLogout(); }} />
         </div>

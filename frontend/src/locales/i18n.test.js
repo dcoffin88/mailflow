@@ -221,8 +221,9 @@ const SAME_VALUE_ALLOWED = {
   'admin.tabs.sso': [['de', 'en', 'es', 'fr', 'it', 'ru']],
 
   // "Password" — international term, same in en and it
-  'admin.systemEmail.password': [['en', 'it']],
-  'login.password':             [['en', 'it']],
+  'admin.systemEmail.password':      [['en', 'it']],
+  'login.password':                  [['en', 'it']],
+  'lockScreen.passwordPlaceholder':  [['en', 'it']],
 
   // "Tema" — "Theme" translates identically in es and it
   'admin.tabs.theme': [['es', 'it']],

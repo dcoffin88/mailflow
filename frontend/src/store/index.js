@@ -24,6 +24,26 @@ export const useStore = create((set, get) => ({
   setUser: (user) => set({ user }),
   updateUser: (updates) => set(state => ({ user: state.user ? { ...state.user, ...updates } : state.user })),
 
+  // Lock screen
+  isLocked: localStorage.getItem('mailflow_locked') === '1',
+  setLocked: (locked) => {
+    if (locked) {
+      localStorage.setItem('mailflow_locked', '1');
+      set({
+        isLocked: true,
+        messages: [], searchResults: [], searchQuery: '',
+        accounts: [], accountsReady: false,
+        folders: {}, selectedMessageId: null,
+        unreadCounts: { total: 0, byAccount: {} },
+        notifications: [], threadMessages: {}, expandedThreadId: null,
+        backfillProgress: {},
+      });
+    } else {
+      localStorage.removeItem('mailflow_locked');
+      set({ isLocked: false });
+    }
+  },
+
   // Accounts
   accounts: [],
   accountsReady: false, // true once the initial getAccounts() call has resolved

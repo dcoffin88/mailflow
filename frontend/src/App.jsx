@@ -7,9 +7,10 @@ import { applyFontSet } from './fonts.js'; // still used for the instant localSt
 import { applyLayout } from './layouts.js';
 import LoginPage from './components/LoginPage.jsx';
 import MailApp from './components/MailApp.jsx';
+import LockScreen from './components/LockScreen.jsx';
 
 export default function App() {
-  const { user, setUser, loadPreferences } = useStore();
+  const { user, setUser, loadPreferences, isLocked } = useStore();
   const [checking, setChecking] = useState(true);
 
   // Register service worker on first mount — independent of auth state.
@@ -82,7 +83,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={user ? <Navigate to="/" /> : <LoginPage />} />
       <Route path="/register" element={user ? <Navigate to="/" /> : <LoginPage />} />
-      <Route path="/*" element={user ? <MailApp /> : <Navigate to="/login" />} />
+      <Route path="/*" element={user ? (isLocked ? <LockScreen /> : <MailApp />) : <Navigate to="/login" />} />
     </Routes>
   );
 }

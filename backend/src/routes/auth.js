@@ -280,11 +280,23 @@ router.post('/logout', (req, res) => {
 
 router.get('/me', async (req, res) => {
   if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
-  const result = await query('SELECT id, username, display_name, avatar, is_admin, totp_enabled FROM users WHERE id = $1', [req.session.userId]);
+  const result = await query('SELECT id, username, display_name, avatar, is_admin, totp_enabled, password_hash FROM users WHERE id = $1', [req.session.userId]);
   const user = result.rows[0];
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
   req.session.isAdmin = user.is_admin;
-  res.json({ user: { id: user.id, username: user.username, displayName: user.display_name, avatar: user.avatar, isAdmin: user.is_admin, totpEnabled: user.totp_enabled } });
+  res.json({ user: { id: user.id, username: user.username, displayName: user.display_name, avatar: user.avatar, isAdmin: user.is_admin, totpEnabled: user.totp_enabled, hasPassword: !!user.password_hash } });
+});
+
+router.post('/unlock', async (req, res) => {
+  if (!req.session.userId) return res.status(401).json({ error: 'Not authenticated' });
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: 'Password required' });
+  const result = await query('SELECT password_hash FROM users WHERE id = $1', [req.session.userId]);
+  const user = result.rows[0];
+  if (!user || !user.password_hash) return res.status(400).json({ error: 'No password set for this account' });
+  const ok = await bcrypt.compare(password, user.password_hash);
+  if (!ok) return res.status(401).json({ error: 'Incorrect password' });
+  res.json({ ok: true });
 });
 
 router.patch('/profile', async (req, res) => {

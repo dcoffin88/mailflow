@@ -32,6 +32,7 @@ export const api = {
   login: (username, password) => request('POST', '/auth/login', { username, password }),
   register: (username, password, inviteToken) => request('POST', '/auth/register', { username, password, inviteToken }),
   logout: () => request('POST', '/auth/logout'),
+  unlock: (password) => request('POST', '/auth/unlock', { password }),
   me: () => request('GET', '/auth/me'),
   getPreferences: () => request('GET', '/auth/preferences'),
   savePreferences: (prefs) => request('PATCH', '/auth/preferences', prefs),

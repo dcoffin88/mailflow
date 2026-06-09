@@ -211,7 +211,17 @@
     "emptyInboxDesc": "No unread messages here",
     "composeAriaLabel": "Compose new message",
     "noAccounts": "No accounts yet",
-    "noAccountsDesc": "Add an email account to get started"
+    "noAccountsDesc": "Add an email account to get started",
+    "foldersHeading": "Folders"
+  },
+  "lockScreen": {
+    "subtitle": "Enter your password to unlock",
+    "passwordPlaceholder": "Password",
+    "unlockButton": "Unlock",
+    "unlocking": "Unlocking…",
+    "wrongPassword": "Incorrect password",
+    "signOut": "Sign out",
+    "signingOut": "Signing out…"
   },
   "sidebar": {
     "allInboxes": "All Inboxes",
@@ -224,6 +234,7 @@
     "hideHidden": "Hide hidden folders",
     "blockImages": "Block images",
     "settings": "Settings",
+    "lock": "Lock",
     "signOut": "Sign out",
     "connectionError": "Connection error",
     "folderMenu": {

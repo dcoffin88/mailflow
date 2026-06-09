@@ -211,7 +211,17 @@
     "emptyInboxDesc": "No hay mensajes sin leer",
     "composeAriaLabel": "Redactar nuevo mensaje",
     "noAccounts": "Aún sin cuentas",
-    "noAccountsDesc": "Agrega una cuenta de correo para comenzar"
+    "noAccountsDesc": "Agrega una cuenta de correo para comenzar",
+    "foldersHeading": "Carpetas"
+  },
+  "lockScreen": {
+    "subtitle": "Introduce tu contraseña para desbloquear",
+    "passwordPlaceholder": "Contraseña",
+    "unlockButton": "Desbloquear",
+    "unlocking": "Desbloqueando…",
+    "wrongPassword": "Contraseña incorrecta",
+    "signOut": "Cerrar sesión",
+    "signingOut": "Cerrando sesión…"
   },
   "sidebar": {
     "allInboxes": "Todas las bandejas",
@@ -224,6 +234,7 @@
     "hideHidden": "Ocultar carpetas ocultas",
     "blockImages": "Bloquear imágenes",
     "settings": "Ajustes",
+    "lock": "Bloquear",
     "signOut": "Cerrar sesión",
     "connectionError": "Error de conexión",
     "folderMenu": {

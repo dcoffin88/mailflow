@@ -211,7 +211,17 @@
     "emptyInboxDesc": "Нет непрочитанных сообщений",
     "composeAriaLabel": "Написать новое письмо",
     "noAccounts": "Аккаунты не добавлены",
-    "noAccountsDesc": "Добавьте почтовый аккаунт, чтобы начать"
+    "noAccountsDesc": "Добавьте почтовый аккаунт, чтобы начать",
+    "foldersHeading": "Папки"
+  },
+  "lockScreen": {
+    "subtitle": "Введите пароль для разблокировки",
+    "passwordPlaceholder": "Пароль",
+    "unlockButton": "Разблокировать",
+    "unlocking": "Разблокировка…",
+    "wrongPassword": "Неверный пароль",
+    "signOut": "Выйти",
+    "signingOut": "Выход…"
   },
   "sidebar": {
     "allInboxes": "Все входящие",
@@ -224,6 +234,7 @@
     "hideHidden": "Скрыть скрытые папки",
     "blockImages": "Блокировать изображения",
     "settings": "Настройки",
+    "lock": "Заблокировать",
     "signOut": "Выйти",
     "connectionError": "Ошибка подключения",
     "folderMenu": {

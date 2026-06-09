@@ -104,6 +104,7 @@ export default function MessageList() {
     threadMessages, setThreadMessages, loadingThread, setLoadingThread,
     hoverQuickActions,
     swipeActions,
+    folders, favoriteFolders, addFavoriteFolder, removeFavoriteFolder, setSelectedAccount,
   } = useStore();
 
   const isMobile = useMobile();
@@ -950,6 +951,27 @@ export default function MessageList() {
 
   // Derived from store — must be declared before callbacks that use it in dependency arrays
   const displayMessages = searchQuery.trim() ? searchResults : messages;
+
+  // Folder search results — shown at the top when searching with a plain query
+  // (no special operator prefixes like from:, to:, subject:, has:, is:)
+  const folderSearchResults = (() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    if (/(?:^|\s)(?:from|to|subject|has|is|cc|bcc):/.test(q)) return [];
+    const results = [];
+    for (const [accountId, folderList] of Object.entries(folders)) {
+      if (!Array.isArray(folderList)) continue;
+      const account = accounts.find(a => a.id === accountId);
+      for (const folder of folderList) {
+        const name = (folder.name || folder.path || '').toLowerCase();
+        const path = (folder.path || '').toLowerCase();
+        if (name.includes(q) || path.includes(q)) {
+          results.push({ ...folder, accountId, accountName: account?.name || account?.email_address || '' });
+        }
+      }
+    }
+    return results;
+  })();
   // Keep scRef in sync so scheduleDelete can read displayMessages without a stale closure
   scRef.current.displayMessages = displayMessages;
 
@@ -2253,6 +2275,73 @@ export default function MessageList() {
               )}
             </div>
           )}
+        {/* ── Folder search results ─────────────────────────── */}
+        {folderSearchResults.length > 0 && (
+          <div style={{ borderBottom: '1px solid var(--border)' }}>
+            <div style={{
+              padding: '8px 14px 4px',
+              fontSize: 11, fontWeight: 600, letterSpacing: '0.05em',
+              color: 'var(--text-tertiary)', textTransform: 'uppercase',
+            }}>
+              {t('messageList.foldersHeading')}
+            </div>
+            {folderSearchResults.map(folder => {
+              const isFav = favoriteFolders.some(f => f.accountId === folder.accountId && f.path === folder.path);
+              return (
+                <div
+                  key={`${folder.accountId}/${folder.path}`}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '7px 14px', cursor: 'pointer',
+                    borderBottom: '1px solid var(--border-subtle)',
+                  }}
+                  onClick={() => {
+                    setSelectedAccount(folder.accountId, folder.path);
+                    setSearchQuery('');
+                    setMobileSidebarOpen(false);
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                  onMouseLeave={e => e.currentTarget.style.background = ''}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="1.75" style={{ flexShrink: 0 }}>
+                    <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+                  </svg>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {folder.name || folder.path}
+                    </div>
+                    {folder.accountName && (
+                      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {folder.accountName}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    title={isFav ? t('sidebar.folderMenu.unfavorite') : t('sidebar.folderMenu.favorite')}
+                    onClick={e => {
+                      e.stopPropagation();
+                      if (isFav) {
+                        removeFavoriteFolder(folder.accountId, folder.path);
+                      } else {
+                        addFavoriteFolder({ accountId: folder.accountId, path: folder.path, name: folder.name || folder.path });
+                      }
+                    }}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0,
+                      padding: '2px 4px', color: isFav ? 'var(--amber)' : 'var(--text-tertiary)',
+                      display: 'flex', alignItems: 'center',
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill={isFav ? 'var(--amber)' : 'none'} stroke="currentColor" strokeWidth="1.75">
+                      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                    </svg>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         {loadingMessages && displayMessages.length === 0 && (
           <div>
             {Array.from({ length: 7 }).map((_, i) => (

@@ -211,7 +211,17 @@
     "emptyInboxDesc": "Aucun message non lu ici",
     "composeAriaLabel": "Rédiger un nouveau message",
     "noAccounts": "Aucun compte pour l'instant",
-    "noAccountsDesc": "Ajoutez un compte e-mail pour commencer"
+    "noAccountsDesc": "Ajoutez un compte e-mail pour commencer",
+    "foldersHeading": "Dossiers"
+  },
+  "lockScreen": {
+    "subtitle": "Saisissez votre mot de passe pour déverrouiller",
+    "passwordPlaceholder": "Mot de passe",
+    "unlockButton": "Déverrouiller",
+    "unlocking": "Déverrouillage…",
+    "wrongPassword": "Mot de passe incorrect",
+    "signOut": "Se déconnecter",
+    "signingOut": "Déconnexion…"
   },
   "sidebar": {
     "allInboxes": "Toutes les boîtes",
@@ -224,6 +234,7 @@
     "hideHidden": "Masquer les dossiers cachés",
     "blockImages": "Bloquer les images",
     "settings": "Paramètres",
+    "lock": "Verrouiller",
     "signOut": "Se déconnecter",
     "connectionError": "Erreur de connexion",
     "folderMenu": {

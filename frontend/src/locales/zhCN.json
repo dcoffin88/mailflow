@@ -211,7 +211,17 @@
     "emptyInboxDesc": "这里没有未读邮件",
     "composeAriaLabel": "撰写新邮件",
     "noAccounts": "暂无账户",
-    "noAccountsDesc": "添加邮件账户以开始使用"
+    "noAccountsDesc": "添加邮件账户以开始使用",
+    "foldersHeading": "文件夹"
+  },
+  "lockScreen": {
+    "subtitle": "输入密码以解锁",
+    "passwordPlaceholder": "密码",
+    "unlockButton": "解锁",
+    "unlocking": "解锁中…",
+    "wrongPassword": "密码错误",
+    "signOut": "退出登录",
+    "signingOut": "正在退出…"
   },
   "sidebar": {
     "allInboxes": "所有收件箱",
@@ -224,6 +234,7 @@
     "hideHidden": "收起隐藏文件夹",
     "blockImages": "阻止图片",
     "settings": "设置",
+    "lock": "锁定",
     "signOut": "退出登录",
     "connectionError": "连接错误",
     "folderMenu": {
