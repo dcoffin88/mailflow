@@ -424,7 +424,8 @@
       "opRegex": "соответствует регулярному выражению",
       "headerNamePlaceholder": "Имя заголовка (напр. X-Spam-Status)",
       "subTabRules": "Правила",
-      "subTabBlockList": "Чёрный список"
+      "subTabBlockList": "Чёрный список",
+      "actionMoveSelectFolder": "Выберите папку…"
     },
     "blockList": {
       "description": "Письма от заблокированных отправителей автоматически перемещаются в корзину.",

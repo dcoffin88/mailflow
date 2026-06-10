@@ -5,6 +5,20 @@ import { requireAuth } from '../middleware/auth.js';
 const router = Router();
 router.use(requireAuth);
 
+const DESTINATION_ACTIONS = new Set(['move', 'archive', 'delete']);
+
+// Strip duplicate destination actions, keeping the first one found.
+export function normalizeActions(actions) {
+  let destSeen = false;
+  return actions.filter(a => {
+    if (DESTINATION_ACTIONS.has(a.type)) {
+      if (destSeen) return false;
+      destSeen = true;
+    }
+    return true;
+  });
+}
+
 router.get('/', async (req, res) => {
   try {
     const result = await query(
@@ -31,6 +45,19 @@ router.post('/', async (req, res) => {
       );
       if (!owned.rows.length) return res.status(403).json({ error: 'Account not found' });
     }
+    const normalizedActions = normalizeActions(actions);
+    const moveAction = normalizedActions.find(a => a.type === 'move' && a.value?.trim());
+    if (moveAction && accountId) {
+      const folderResult = await query(
+        `SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE path = $2) AS match
+         FROM folders WHERE account_id = $1`,
+        [accountId, moveAction.value.trim()]
+      );
+      const { total, match } = folderResult.rows[0];
+      if (parseInt(total) > 0 && parseInt(match) === 0) {
+        return res.status(400).json({ error: 'Move destination folder not found for this account' });
+      }
+    }
     const countResult = await query(
       'SELECT COUNT(*) AS cnt FROM inbox_rules WHERE user_id = $1',
       [req.session.userId]
@@ -50,7 +77,7 @@ router.post('/', async (req, res) => {
         priority,
         conditionLogic === 'OR' ? 'OR' : 'AND',
         JSON.stringify(conditions),
-        JSON.stringify(actions),
+        JSON.stringify(normalizedActions),
       ]
     );
     res.status(201).json(result.rows[0]);
@@ -73,6 +100,19 @@ router.put('/:id', async (req, res) => {
       );
       if (!owned.rows.length) return res.status(403).json({ error: 'Account not found' });
     }
+    const normalizedActions = normalizeActions(actions);
+    const moveAction = normalizedActions.find(a => a.type === 'move' && a.value?.trim());
+    if (moveAction && accountId) {
+      const folderResult = await query(
+        `SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE path = $2) AS match
+         FROM folders WHERE account_id = $1`,
+        [accountId, moveAction.value.trim()]
+      );
+      const { total, match } = folderResult.rows[0];
+      if (parseInt(total) > 0 && parseInt(match) === 0) {
+        return res.status(400).json({ error: 'Move destination folder not found for this account' });
+      }
+    }
     const result = await query(
       `UPDATE inbox_rules
        SET name = $1, account_id = $2, enabled = $3, stop_processing = $4,
@@ -86,7 +126,7 @@ router.put('/:id', async (req, res) => {
         !!stopProcessing,
         conditionLogic === 'OR' ? 'OR' : 'AND',
         JSON.stringify(conditions),
-        JSON.stringify(actions),
+        JSON.stringify(normalizedActions),
         req.params.id,
         req.session.userId,
       ]

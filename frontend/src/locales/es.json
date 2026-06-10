@@ -424,7 +424,8 @@
       "opRegex": "coincide con regex",
       "headerNamePlaceholder": "Nombre del encabezado (ej. X-Spam-Status)",
       "subTabRules": "Reglas",
-      "subTabBlockList": "Lista de bloqueo"
+      "subTabBlockList": "Lista de bloqueo",
+      "actionMoveSelectFolder": "Seleccionar carpeta…"
     },
     "blockList": {
       "description": "Los correos de remitentes bloqueados se mueven automáticamente a la papelera.",

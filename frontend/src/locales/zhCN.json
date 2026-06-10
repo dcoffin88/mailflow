@@ -412,6 +412,7 @@
       "actionDelete": "移至废件箱",
       "actionMove": "移动到文件夹",
       "actionMovePlaceholder": "文件夹名称",
+      "actionMoveSelectFolder": "选择文件夹…",
       "stopProcessing": "匹配后停止处理后续规则",
       "stopProcessingHint": "若此规则匹配，后续规则将不会对同一邮件运行。",
       "saveButton": "保存规则",

@@ -865,7 +865,8 @@
       "opRegex": "entspricht Regex",
       "headerNamePlaceholder": "Header-Name (z. B. X-Spam-Status)",
       "subTabRules": "Regeln",
-      "subTabBlockList": "Blockliste"
+      "subTabBlockList": "Blockliste",
+      "actionMoveSelectFolder": "Ordner auswählen…"
     },
     "blockList": {
       "description": "E-Mails von blockierten Absendern werden automatisch in den Papierkorb verschoben.",

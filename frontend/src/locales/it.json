@@ -424,7 +424,8 @@
       "opRegex": "corrisponde a regex",
       "headerNamePlaceholder": "Nome intestazione (es. X-Spam-Status)",
       "subTabRules": "Regole",
-      "subTabBlockList": "Lista blocchi"
+      "subTabBlockList": "Lista blocchi",
+      "actionMoveSelectFolder": "Seleziona una cartella…"
     },
     "blockList": {
       "description": "Le e-mail dei mittenti bloccati vengono automaticamente spostate nel cestino.",

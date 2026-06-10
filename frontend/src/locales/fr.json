@@ -424,7 +424,8 @@
       "opRegex": "correspond à l'expression régulière",
       "headerNamePlaceholder": "Nom de l'en-tête (ex. X-Spam-Status)",
       "subTabRules": "Règles",
-      "subTabBlockList": "Liste de blocage"
+      "subTabBlockList": "Liste de blocage",
+      "actionMoveSelectFolder": "Sélectionner un dossier…"
     },
     "blockList": {
       "description": "Les e-mails des expéditeurs bloqués sont automatiquement déplacés vers la corbeille.",

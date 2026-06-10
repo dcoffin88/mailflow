@@ -3857,7 +3857,7 @@ function AboutTab() {
 // ─── Rules Tab ────────────────────────────────────────────────────────────────
 function RulesTab() {
   const { t } = useTranslation();
-  const { accounts, rulesPreFill, setRulesPreFill } = useStore();
+  const { accounts, folders: storeFolders, setFolders, rulesPreFill, setRulesPreFill } = useStore();
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
   const [formMode, setFormMode] = useState(null); // null | 'add' | 'edit'
@@ -3879,6 +3879,15 @@ function RulesTab() {
       setRulesPreFill(null);
     }
   }, [rulesPreFill, setRulesPreFill]);
+
+  useEffect(() => {
+    if (!formMode || !formData?.accountId) return;
+    const accountId = formData.accountId;
+    if (accountId in useStore.getState().folders) return;
+    api.getFolders(accountId)
+      .then(data => setFolders(accountId, data))
+      .catch(() => {});
+  }, [formMode, formData?.accountId, setFolders]);
 
   function blankForm(prefill = {}) {
     return {
@@ -3904,12 +3913,22 @@ function RulesTab() {
   }
 
   function openEdit(rule) {
+    const rawActions = Array.isArray(rule.actions) ? rule.actions : [];
+    const destActionsSet = new Set(['move', 'archive', 'delete']);
+    let destSeen = false;
+    const actions = rawActions.filter(a => {
+      if (destActionsSet.has(a.type)) {
+        if (destSeen) return false;
+        destSeen = true;
+      }
+      return true;
+    });
     setFormData({
       name: rule.name,
       accountId: rule.account_id || '',
       conditionLogic: rule.condition_logic || 'AND',
       conditions: Array.isArray(rule.conditions) ? rule.conditions : [],
-      actions: Array.isArray(rule.actions) ? rule.actions : [],
+      actions,
       enabled: rule.enabled,
       stopProcessing: rule.stop_processing,
     });
@@ -4098,7 +4117,11 @@ function RulesTab() {
           <select
             style={inputStyle}
             value={fd.accountId}
-            onChange={e => setFormData(p => ({ ...p, accountId: e.target.value }))}
+            onChange={e => setFormData(p => ({
+              ...p,
+              accountId: e.target.value,
+              actions: p.actions.map(a => a.type === 'move' ? { ...a, value: '' } : a),
+            }))}
           >
             <option value="">{t('admin.rules.accountAll')}</option>
             {accounts.map(a => (
@@ -4200,14 +4223,32 @@ function RulesTab() {
                   <input type="checkbox" checked={checked} onChange={() => toggleAction(type)} />
                   {label}
                 </label>
-                {type === 'move' && checked && (
-                  <input
-                    style={{ ...inputStyle, marginTop: 6, marginLeft: 22 }}
-                    value={moveVal}
-                    onChange={e => setActionValue('move', e.target.value)}
-                    placeholder={t('admin.rules.actionMovePlaceholder')}
-                  />
-                )}
+                {type === 'move' && checked && (() => {
+                  const allFolders = fd.accountId ? (storeFolders[fd.accountId] || []) : [];
+                  const movableFolders = allFolders.filter(f => f.path && f.path !== 'INBOX');
+                  if (movableFolders.length > 0) {
+                    return (
+                      <select
+                        style={{ ...inputStyle, marginTop: 6, marginLeft: 22 }}
+                        value={moveVal}
+                        onChange={e => setActionValue('move', e.target.value)}
+                      >
+                        <option value="">{t('admin.rules.actionMoveSelectFolder')}</option>
+                        {movableFolders.map(f => (
+                          <option key={f.path} value={f.path}>{f.name || f.path}</option>
+                        ))}
+                      </select>
+                    );
+                  }
+                  return (
+                    <input
+                      style={{ ...inputStyle, marginTop: 6, marginLeft: 22 }}
+                      value={moveVal}
+                      onChange={e => setActionValue('move', e.target.value)}
+                      placeholder={t('admin.rules.actionMovePlaceholder')}
+                    />
+                  );
+                })()}
               </div>
             );
           })}

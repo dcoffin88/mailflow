@@ -1206,19 +1206,21 @@ export default function MessageList() {
     };
 
     const onNext = () => {
-      const { messages, selectedMessageId, setSelectedMessage } = getState();
-      if (!messages.length) return;
-      const idx = messages.findIndex(m => m.id === selectedMessageId);
-      const next = messages[idx + 1] ?? messages[0];
+      const { messages, searchResults, searchQuery, selectedMessageId, setSelectedMessage } = getState();
+      const pool = searchQuery.trim() ? searchResults : messages;
+      if (!pool.length) return;
+      const idx = pool.findIndex(m => m.id === selectedMessageId);
+      const next = pool[idx + 1] ?? pool[0];
       setSelectedMessage(next.id);
       markRead(next);
     };
 
     const onPrev = () => {
-      const { messages, selectedMessageId, setSelectedMessage } = getState();
-      if (!messages.length) return;
-      const idx = messages.findIndex(m => m.id === selectedMessageId);
-      const prev = idx <= 0 ? messages[messages.length - 1] : messages[idx - 1];
+      const { messages, searchResults, searchQuery, selectedMessageId, setSelectedMessage } = getState();
+      const pool = searchQuery.trim() ? searchResults : messages;
+      if (!pool.length) return;
+      const idx = pool.findIndex(m => m.id === selectedMessageId);
+      const prev = idx <= 0 ? pool[pool.length - 1] : pool[idx - 1];
       setSelectedMessage(prev.id);
       markRead(prev);
     };
