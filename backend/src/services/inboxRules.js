@@ -137,12 +137,14 @@ export async function applyInboxRules(messages, account, imapManager) {
       if (!evaluateRule(rule, msg)) continue;
 
       const actions = Array.isArray(rule.actions) ? rule.actions : [];
+      let destSeen = false;
       for (const action of actions) {
+        const isDest = action.type === 'move' || action.type === 'archive' || action.type === 'delete';
+        if (isDest && destSeen) continue;
+        if (isDest) destSeen = true;
         try {
           await applyAction(action, msg, account, imapManager);
-          if (action.type === 'move' || action.type === 'archive' || action.type === 'delete') {
-            removedIds.add(msg.id);
-          }
+          if (isDest) removedIds.add(msg.id);
         } catch (err) {
           console.error(`inboxRules: action ${action.type} failed for msg ${msg.id}:`, err.message);
         }
