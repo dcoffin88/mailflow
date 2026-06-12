@@ -21,6 +21,9 @@ export function validateConditions(conditions) {
     if (FIELDS_REQUIRING_VALUE.has(cond.field) && !String(cond.value || '').trim()) {
       return 'Condition value cannot be empty';
     }
+    if (cond.field === 'header' && !String(cond.headerName || '').trim()) {
+      return 'Header name is required for header conditions';
+    }
   }
   return null;
 }

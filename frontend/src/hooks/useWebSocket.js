@@ -108,19 +108,25 @@ export function useWebSocket() {
     switch (data.type) {
       case 'new_messages': {
         const { messages, count, accountId, folder } = data;
+        // alertMessages/alertCount are provided by the server when inbox rules ran;
+        // they exclude messages silenced by a mark_read rule. Fall back to the full
+        // messages/count for servers or code paths that don't send the alert fields.
+        const alertMessages = data.alertMessages ?? messages;
+        const alertCount = data.alertCount ?? count;
         const isInbox = !folder || folder === 'INBOX';
 
         if (messages && messages.length > 0) {
           // In-app notifications and sounds are inbox-only — non-inbox folder syncs
           // (Archive, Spam, on-demand syncs) should not trigger alerts for old mail.
-          if (isInbox && document.visibilityState === 'visible') {
-            const latest = messages[0];
+          // Also skipped when all messages were silenced by a mark_read rule (alertCount === 0).
+          if (isInbox && alertCount > 0 && document.visibilityState === 'visible') {
+            const latest = alertMessages[0];
             addNotification({
               type: 'new_mail',
               accountId,
               title: latest.fromName || latest.fromEmail || t('notifications.newMessage'),
               body: latest.subject || t('common.noSubject'),
-              count,
+              count: alertCount,
             });
             const { notificationSound, customSoundDataUrl } = useStore.getState();
             playNotificationSound(notificationSound, customSoundDataUrl);

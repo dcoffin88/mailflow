@@ -1,5 +1,5 @@
 import { query } from './db.js';
-import { resolveArchiveFolder, resolveTrashFolder, resolveAllTrashPaths, getDeleteStrategy } from '../utils/mailUtils.js';
+import { resolveArchiveFolder, resolveTrashFolder, resolveAllTrashPaths, getDeleteStrategy, adjustFolderCounts } from '../utils/mailUtils.js';
 
 async function getRulesForAccount(userId, accountId) {
   const result = await query(
@@ -51,11 +51,28 @@ function evaluateCondition(cond, msg) {
   const { field, operator, value } = cond;
   switch (field) {
     case 'from': {
+      // not_contains must require BOTH email and name to not contain the value.
+      // A sender "Alice <alice@example.com>" would wrongly escape a not_contains filter
+      // using OR because the display name "Alice" doesn't contain the domain.
+      if (operator === 'not_contains') {
+        return matchOperator('not_contains', msg.fromEmail, value) &&
+               matchOperator('not_contains', msg.fromName, value);
+      }
       return matchOperator(operator, msg.fromEmail, value) ||
              matchOperator(operator, msg.fromName, value);
     }
     case 'to': {
       const addrs = Array.isArray(msg.to) ? msg.to : [];
+      if (!addrs.length) return false;
+      // not_contains must mean none of the recipients contain the value.
+      // Using some() for not_contains would fire whenever any single address or name
+      // field does not contain the value — almost always true for multi-recipient messages.
+      if (operator === 'not_contains') {
+        return addrs.every(a =>
+          matchOperator('not_contains', a.email, value) &&
+          matchOperator('not_contains', a.name, value)
+        );
+      }
       return addrs.some(a =>
         matchOperator(operator, a.email, value) ||
         matchOperator(operator, a.name, value)
@@ -91,20 +108,21 @@ function evaluateRule(rule, msg) {
   return conditions.every(c => evaluateCondition(c, msg));
 }
 
-// Returns the subset of messages that remain in INBOX after rules have been applied.
-// Messages that were moved, archived, or deleted are removed from the returned array
-// so the new_messages broadcast only covers messages still in INBOX.
+// Applies inbox rules to a batch of new INBOX messages. Returns { remaining, mutedIds }:
+//   remaining — messages still in INBOX after rules ran (moved/archived/deleted excluded)
+//   mutedIds  — IDs of remaining messages that had mark_read applied by a rule;
+//               the caller uses this to suppress sound/toast/push for silenced mail
 export async function applyInboxRules(messages, account, imapManager) {
-  if (!messages.length) return messages;
+  if (!messages.length) return { remaining: messages, mutedIds: new Set() };
 
   let rules;
   try {
     rules = await getRulesForAccount(account.user_id, account.id);
   } catch (err) {
     console.error('inboxRules: failed to load rules:', err.message);
-    return messages;
+    return { remaining: messages, mutedIds: new Set() };
   }
-  if (!rules.length) return messages;
+  if (!rules.length) return { remaining: messages, mutedIds: new Set() };
 
   // If any rule matches on body, batch-fetch body_text from DB (it's not on the
   // parsed message object — it was stored to DB during processMsg).
@@ -137,9 +155,17 @@ export async function applyInboxRules(messages, account, imapManager) {
 
   const remaining = [...messages];
   const removedIds = new Set();
+  // IDs of remaining-in-INBOX messages that had mark_read applied by a rule.
+  // Used by the caller to skip sound/toast/push for mail the user chose to silence.
+  const mutedIds = new Set();
 
   for (const msg of messages) {
     for (const rule of rules) {
+      // Once a message has been relocated by an earlier rule, stop evaluating further
+      // rules against its now-stale folder/uid — any subsequent IMAP action would fail
+      // and generate misleading error logs.
+      if (removedIds.has(msg.id)) break;
+
       let matches;
       try {
         matches = evaluateRule(rule, msg);
@@ -158,6 +184,9 @@ export async function applyInboxRules(messages, account, imapManager) {
         try {
           const acted = await applyAction(action, msg, account, imapManager);
           if (isDest && acted) removedIds.add(msg.id);
+          // mark_read: add to mutedIds so caller suppresses sound/push.
+          // star: intentionally NOT muted — a star-only rule should still alert.
+          if (action.type === 'mark_read') mutedIds.add(msg.id);
         } catch (err) {
           console.error(`inboxRules: action ${action.type} failed for msg ${msg.id}:`, err.message);
         }
@@ -167,7 +196,10 @@ export async function applyInboxRules(messages, account, imapManager) {
     }
   }
 
-  return remaining.filter(m => !removedIds.has(m.id));
+  return {
+    remaining: remaining.filter(m => !removedIds.has(m.id)),
+    mutedIds,
+  };
 }
 
 // Moves messages from blocked senders to trash before inbox rules run.
@@ -211,6 +243,9 @@ export async function applyBlockList(messages, account, imapManager) {
               await query('UPDATE messages SET folder = $1 WHERE id = $2', [strategy.destination, msg.id]);
               setTimeout(() => imapManager._unguardMoveUid(account.id, strategy.destination, msg.uid), 10_000);
             }
+            const wasUnread = !(msg.isRead ?? msg.is_read);
+            adjustFolderCounts(account.id, msg.folder, -1, wasUnread ? -1 : 0);
+            adjustFolderCounts(account.id, strategy.destination, 1, wasUnread ? 1 : 0);
           } else {
             remaining.push(msg);
           }
@@ -220,6 +255,8 @@ export async function applyBlockList(messages, account, imapManager) {
       } else if (strategy.action === 'expunge') {
         await imapManager.setFlag(account, msg.uid, msg.folder, '\\Deleted', true);
         await query('UPDATE messages SET is_deleted = true WHERE id = $1', [msg.id]);
+        const wasUnread = !(msg.isRead ?? msg.is_read);
+        adjustFolderCounts(account.id, msg.folder, -1, wasUnread ? -1 : 0);
       } else {
         remaining.push(msg);
       }
@@ -241,6 +278,10 @@ async function applyAction(action, msg, account, imapManager) {
       imapManager.setFlag(account, msg.uid, msg.folder, '\\Seen', true).catch(err => {
         console.error('inboxRules: setFlag \\Seen failed:', err.message);
       });
+      // msg.isRead (camelCase from parseMessage) and msg.is_read (snake_case in test
+      // fixtures) both represent the pre-action read state; use whichever is present.
+      const wasUnread = !(msg.isRead ?? msg.is_read);
+      if (wasUnread) adjustFolderCounts(account.id, msg.folder, 0, -1);
       break;
     }
 
@@ -287,6 +328,9 @@ async function applyAction(action, msg, account, imapManager) {
           await query('UPDATE messages SET folder = $1 WHERE id = $2', [destFolder, msg.id]);
           setTimeout(() => imapManager._unguardMoveUid(account.id, destFolder, msg.uid), 10_000);
         }
+        const wasUnread = !(msg.isRead ?? msg.is_read);
+        adjustFolderCounts(account.id, msg.folder, -1, wasUnread ? -1 : 0);
+        adjustFolderCounts(account.id, destFolder, 1, wasUnread ? 1 : 0);
       } finally {
         imapManager._unguardMoveUid(account.id, msg.folder, msg.uid);
       }
@@ -308,6 +352,9 @@ async function applyAction(action, msg, account, imapManager) {
           await query('UPDATE messages SET folder = $1 WHERE id = $2', [archiveFolder, msg.id]);
           setTimeout(() => imapManager._unguardMoveUid(account.id, archiveFolder, msg.uid), 10_000);
         }
+        const wasUnread = !(msg.isRead ?? msg.is_read);
+        adjustFolderCounts(account.id, msg.folder, -1, wasUnread ? -1 : 0);
+        adjustFolderCounts(account.id, archiveFolder, 1, wasUnread ? 1 : 0);
       } finally {
         imapManager._unguardMoveUid(account.id, msg.folder, msg.uid);
       }
@@ -332,12 +379,17 @@ async function applyAction(action, msg, account, imapManager) {
             await query('UPDATE messages SET folder = $1 WHERE id = $2', [strategy.destination, msg.id]);
             setTimeout(() => imapManager._unguardMoveUid(account.id, strategy.destination, msg.uid), 10_000);
           }
+          const wasUnread = !(msg.isRead ?? msg.is_read);
+          adjustFolderCounts(account.id, msg.folder, -1, wasUnread ? -1 : 0);
+          adjustFolderCounts(account.id, strategy.destination, 1, wasUnread ? 1 : 0);
         } finally {
           imapManager._unguardMoveUid(account.id, msg.folder, msg.uid);
         }
       } else if (strategy.action === 'expunge') {
         await imapManager.setFlag(account, msg.uid, msg.folder, '\\Deleted', true);
         await query('UPDATE messages SET is_deleted = true WHERE id = $1', [msg.id]);
+        const wasUnread = !(msg.isRead ?? msg.is_read);
+        adjustFolderCounts(account.id, msg.folder, -1, wasUnread ? -1 : 0);
       }
       return true;
     }

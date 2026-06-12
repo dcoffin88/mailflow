@@ -6,10 +6,11 @@ vi.mock('../utils/mailUtils.js', () => ({
   resolveTrashFolder: vi.fn(),
   resolveAllTrashPaths: vi.fn(),
   getDeleteStrategy: vi.fn(),
+  adjustFolderCounts: vi.fn(),
 }));
 
 const { query } = await import('./db.js');
-const { resolveArchiveFolder } = await import('../utils/mailUtils.js');
+const { resolveArchiveFolder, adjustFolderCounts } = await import('../utils/mailUtils.js');
 import { applyInboxRules } from './inboxRules.js';
 
 const account = { id: 'acc-1', user_id: 'user-1', folder_mappings: {} };
@@ -51,7 +52,7 @@ describe('applyInboxRules — blank condition value never matches', () => {
 
     const result = await applyInboxRules([mkMsg()], account, mockImap);
 
-    expect(result).toHaveLength(1); // message stays in inbox
+    expect(result.remaining).toHaveLength(1); // message stays in inbox
     expect(mockImap.bulkMoveMessages).not.toHaveBeenCalled();
   });
 
@@ -64,7 +65,7 @@ describe('applyInboxRules — blank condition value never matches', () => {
 
     const result = await applyInboxRules([mkMsg()], account, mockImap);
 
-    expect(result).toHaveLength(1);
+    expect(result.remaining).toHaveLength(1);
     expect(mockImap.bulkMoveMessages).not.toHaveBeenCalled();
   });
 });
@@ -87,7 +88,7 @@ describe('applyInboxRules — malformed condition does not abort other rules', (
     const result = await applyInboxRules([mkMsg()], account, mockImap);
 
     // good rule fired, message removed from inbox
-    expect(result).toHaveLength(0);
+    expect(result.remaining).toHaveLength(0);
     expect(mockImap.bulkMoveMessages).toHaveBeenCalledOnce();
   });
 });
@@ -99,7 +100,7 @@ describe('applyInboxRules — destination action no-ops do not remove message', 
 
     const result = await applyInboxRules([mkMsg()], account, mockImap);
 
-    expect(result).toHaveLength(1);
+    expect(result.remaining).toHaveLength(1);
     expect(mockImap.bulkMoveMessages).not.toHaveBeenCalled();
   });
 
@@ -110,7 +111,7 @@ describe('applyInboxRules — destination action no-ops do not remove message', 
 
     const result = await applyInboxRules([mkMsg()], account, mockImap);
 
-    expect(result).toHaveLength(1);
+    expect(result.remaining).toHaveLength(1);
     expect(mockImap.bulkMoveMessages).not.toHaveBeenCalled();
   });
 });
@@ -128,7 +129,7 @@ describe('applyInboxRules — UID update after move', () => {
 
     const result = await applyInboxRules([mkMsg()], account, mockImap);
 
-    expect(result).toHaveLength(0); // message removed from inbox
+    expect(result.remaining).toHaveLength(0); // message removed from inbox
     const updateCall = query.mock.calls[1];
     expect(updateCall[0]).toMatch(/uid/i); // SQL includes uid update
     expect(updateCall[1]).toEqual(['INBOX/Work', 789, 'msg-1']);
@@ -146,7 +147,7 @@ describe('applyInboxRules — UID update after move', () => {
 
     const result = await applyInboxRules([mkMsg()], account, mockImap);
 
-    expect(result).toHaveLength(0);
+    expect(result.remaining).toHaveLength(0);
     const updateCall = query.mock.calls[1];
     expect(updateCall[1]).toEqual(['INBOX/Work', 'msg-1']); // only folder, no uid
   });
@@ -221,5 +222,206 @@ describe('applyInboxRules — destination action deduplication', () => {
 
     expect(mockImap.bulkMoveMessages).toHaveBeenCalledOnce();
     expect(mockImap.setFlag).toHaveBeenCalledWith(account, 100, 'INBOX', '\\Seen', true);
+  });
+});
+
+describe('applyInboxRules — already-relocated message skips subsequent rules', () => {
+  it('does not apply a second matching rule after the first rule moved the message', async () => {
+    const rule1 = mkRule(
+      [{ type: 'move', value: 'INBOX/Work' }],
+      { id: 'rule-1', stop_processing: false }
+    );
+    const rule2 = mkRule(
+      [{ type: 'move', value: 'INBOX/Spam' }],
+      { id: 'rule-2', stop_processing: false }
+    );
+    query
+      .mockResolvedValueOnce({ rows: [rule1, rule2] }) // getRulesForAccount
+      .mockResolvedValueOnce({ rows: [] });              // UPDATE folder (rule1 move)
+    mockImap.bulkMoveMessages.mockResolvedValue({ failed: [], uidMap: new Map([[100, 200]]) });
+
+    const result = await applyInboxRules([mkMsg()], account, mockImap);
+
+    // message removed from remaining; rule2 never fired
+    expect(result.remaining).toHaveLength(0);
+    expect(mockImap.bulkMoveMessages).toHaveBeenCalledOnce();
+    expect(mockImap.bulkMoveMessages).toHaveBeenCalledWith(account, [100], 'INBOX', 'INBOX/Work');
+  });
+});
+
+describe('applyInboxRules — mutedIds for mark_read', () => {
+  it('adds message id to mutedIds when mark_read rule applies', async () => {
+    const rule = mkRule([{ type: 'mark_read', value: '' }]);
+    query
+      .mockResolvedValueOnce({ rows: [rule] }) // getRulesForAccount
+      .mockResolvedValueOnce({ rows: [] });     // UPDATE is_read
+    mockImap.setFlag.mockResolvedValue(undefined);
+
+    const result = await applyInboxRules([mkMsg()], account, mockImap);
+
+    expect(result.remaining).toHaveLength(1); // message stays in inbox
+    expect(result.mutedIds.has('msg-1')).toBe(true);
+  });
+
+  it('does not add message id to mutedIds when only star rule applies', async () => {
+    const rule = mkRule([{ type: 'star', value: '' }]);
+    query
+      .mockResolvedValueOnce({ rows: [rule] }) // getRulesForAccount
+      .mockResolvedValueOnce({ rows: [] });     // UPDATE is_starred
+    mockImap.setFlag.mockResolvedValue(undefined);
+
+    const result = await applyInboxRules([mkMsg()], account, mockImap);
+
+    expect(result.remaining).toHaveLength(1);
+    expect(result.mutedIds.has('msg-1')).toBe(false);
+  });
+
+  it('returns empty mutedIds when no rules match', async () => {
+    query.mockResolvedValueOnce({ rows: [] }); // no rules
+
+    const result = await applyInboxRules([mkMsg()], account, mockImap);
+
+    expect(result.remaining).toHaveLength(1);
+    expect(result.mutedIds.size).toBe(0);
+  });
+});
+
+describe('applyInboxRules — adjustFolderCounts on action', () => {
+  it('calls adjustFolderCounts for source and destination after a successful move', async () => {
+    const rule = mkRule([{ type: 'move', value: 'INBOX/Work' }]);
+    query
+      .mockResolvedValueOnce({ rows: [rule] })
+      .mockResolvedValueOnce({ rows: [] });
+    mockImap.bulkMoveMessages.mockResolvedValue({ failed: [], uidMap: new Map([[100, 200]]) });
+
+    await applyInboxRules([mkMsg({ is_read: false })], account, mockImap);
+
+    // unread message moved: source loses 1 total and 1 unread; dest gains 1 of each
+    expect(adjustFolderCounts).toHaveBeenCalledWith('acc-1', 'INBOX', -1, -1);
+    expect(adjustFolderCounts).toHaveBeenCalledWith('acc-1', 'INBOX/Work', 1, 1);
+  });
+
+  it('calls adjustFolderCounts with zero unread delta when message is already read', async () => {
+    const rule = mkRule([{ type: 'move', value: 'INBOX/Work' }]);
+    query
+      .mockResolvedValueOnce({ rows: [rule] })
+      .mockResolvedValueOnce({ rows: [] });
+    mockImap.bulkMoveMessages.mockResolvedValue({ failed: [], uidMap: new Map([[100, 200]]) });
+
+    await applyInboxRules([mkMsg({ is_read: true })], account, mockImap);
+
+    expect(adjustFolderCounts).toHaveBeenCalledWith('acc-1', 'INBOX', -1, 0);
+    expect(adjustFolderCounts).toHaveBeenCalledWith('acc-1', 'INBOX/Work', 1, 0);
+  });
+
+  it('calls adjustFolderCounts with unread delta only for mark_read on an unread message', async () => {
+    const rule = mkRule([{ type: 'mark_read', value: '' }]);
+    query
+      .mockResolvedValueOnce({ rows: [rule] })
+      .mockResolvedValueOnce({ rows: [] });
+    mockImap.setFlag.mockResolvedValue(undefined);
+
+    await applyInboxRules([mkMsg({ is_read: false })], account, mockImap);
+
+    expect(adjustFolderCounts).toHaveBeenCalledWith('acc-1', 'INBOX', 0, -1);
+    expect(adjustFolderCounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call adjustFolderCounts for mark_read when message is already read', async () => {
+    const rule = mkRule([{ type: 'mark_read', value: '' }]);
+    query
+      .mockResolvedValueOnce({ rows: [rule] })
+      .mockResolvedValueOnce({ rows: [] });
+    mockImap.setFlag.mockResolvedValue(undefined);
+
+    await applyInboxRules([mkMsg({ is_read: true })], account, mockImap);
+
+    expect(adjustFolderCounts).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyInboxRules — from not_contains requires both name and email to not match', () => {
+  it('does not fire when email contains the value even if name does not', async () => {
+    // Buggy OR semantics: name "Alice" doesn't contain "example.com", so the rule
+    // would fire even though fromEmail does contain it. Correct AND semantics: neither
+    // email NOR name must contain the value.
+    const rule = mkRule(
+      [{ type: 'move', value: 'INBOX/Filtered' }],
+      { conditions: [{ field: 'from', operator: 'not_contains', value: 'example.com' }] }
+    );
+    query.mockResolvedValueOnce({ rows: [rule] });
+
+    const msg = mkMsg({ fromEmail: 'alice@example.com', fromName: 'Alice' });
+    const result = await applyInboxRules([msg], account, mockImap);
+
+    // email contains 'example.com' → condition false → no move
+    expect(result.remaining).toHaveLength(1);
+    expect(mockImap.bulkMoveMessages).not.toHaveBeenCalled();
+  });
+
+  it('fires when neither email nor name contains the value', async () => {
+    const rule = mkRule(
+      [{ type: 'move', value: 'INBOX/Filtered' }],
+      { conditions: [{ field: 'from', operator: 'not_contains', value: 'example.com' }] }
+    );
+    query
+      .mockResolvedValueOnce({ rows: [rule] })
+      .mockResolvedValueOnce({ rows: [] });
+    mockImap.bulkMoveMessages.mockResolvedValue({ failed: [], uidMap: new Map() });
+
+    const msg = mkMsg({ fromEmail: 'alice@other.net', fromName: 'Alice' });
+    const result = await applyInboxRules([msg], account, mockImap);
+
+    // neither field contains 'example.com' → condition true → move fires
+    expect(result.remaining).toHaveLength(0);
+    expect(mockImap.bulkMoveMessages).toHaveBeenCalledOnce();
+  });
+});
+
+describe('applyInboxRules — to not_contains requires all recipients to not match', () => {
+  it('does not fire when any recipient address contains the value', async () => {
+    // Buggy some() semantics: addr B doesn't contain 'filtered', so some() returns true
+    // for that element → rule fires even though addr A does contain 'filtered'.
+    // Correct every() semantics: ALL recipients must not contain the value.
+    const rule = mkRule(
+      [{ type: 'move', value: 'INBOX/Filtered' }],
+      { conditions: [{ field: 'to', operator: 'not_contains', value: 'filtered' }] }
+    );
+    query.mockResolvedValueOnce({ rows: [rule] });
+
+    const msg = mkMsg({
+      to: [
+        { email: 'a@filtered.com', name: 'A' },
+        { email: 'b@other.com', name: 'B' },
+      ],
+    });
+    const result = await applyInboxRules([msg], account, mockImap);
+
+    // addr A contains 'filtered' → condition false → no move
+    expect(result.remaining).toHaveLength(1);
+    expect(mockImap.bulkMoveMessages).not.toHaveBeenCalled();
+  });
+
+  it('fires when all recipients and their names do not contain the value', async () => {
+    const rule = mkRule(
+      [{ type: 'move', value: 'INBOX/Filtered' }],
+      { conditions: [{ field: 'to', operator: 'not_contains', value: 'filtered' }] }
+    );
+    query
+      .mockResolvedValueOnce({ rows: [rule] })
+      .mockResolvedValueOnce({ rows: [] });
+    mockImap.bulkMoveMessages.mockResolvedValue({ failed: [], uidMap: new Map() });
+
+    const msg = mkMsg({
+      to: [
+        { email: 'a@other.com', name: 'Alice' },
+        { email: 'b@other.net', name: 'Bob' },
+      ],
+    });
+    const result = await applyInboxRules([msg], account, mockImap);
+
+    // no recipient contains 'filtered' → condition true → move fires
+    expect(result.remaining).toHaveLength(0);
+    expect(mockImap.bulkMoveMessages).toHaveBeenCalledOnce();
   });
 });

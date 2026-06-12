@@ -1221,6 +1221,10 @@ export class ImapManager {
         }
 
         if (newMessages.length > 0) {
+          // mutedIds: messages that had a mark_read rule applied and stayed in INBOX.
+          // Push and client-side sound/toast are skipped for these so mark_read rules
+          // don't still alert the user about mail they chose to auto-silence.
+          let mutedIds = new Set();
           if (folder === 'INBOX') {
             try {
               newMessages = await applyBlockList(newMessages, account, this);
@@ -1228,25 +1232,32 @@ export class ImapManager {
               console.error('blockList error:', err.message);
             }
             try {
-              newMessages = await applyInboxRules(newMessages, account, this);
+              const rulesResult = await applyInboxRules(newMessages, account, this);
+              newMessages = rulesResult.remaining;
+              mutedIds = rulesResult.mutedIds;
             } catch (err) {
               console.error('inboxRules error:', err.message);
             }
           }
+          // alertMessages: remaining messages not silenced by a mark_read rule.
+          const alertMessages = newMessages.filter(m => !mutedIds.has(m.id));
+          const alertCount = alertMessages.length;
           if (newMessages.length > 0) this.broadcast({
             type: 'new_messages', accountId: account.id,
-            folder, messages: newMessages.slice(-5), count: newMessages.length
+            folder, messages: newMessages.slice(-5), count: newMessages.length,
+            alertMessages: alertMessages.slice(-5), alertCount,
           }, account.user_id);
-          // Web Push — INBOX only. Non-inbox folder syncs (Archive, Spam, on-demand)
-          // can surface messages that are old or intentionally filtered; sending
-          // push for them would be misleading. Fire-and-forget: push errors are non-fatal.
-          if (folder === 'INBOX' && newMessages.length > 0) {
-            const latest = newMessages[newMessages.length - 1];
+          // Web Push — INBOX only, alert-eligible messages only. Non-inbox folder syncs
+          // (Archive, Spam, on-demand) can surface old or filtered messages; sending push
+          // for them or for mark_read-silenced messages would be misleading.
+          // Fire-and-forget: push errors are non-fatal.
+          if (folder === 'INBOX' && alertMessages.length > 0) {
+            const latest = alertMessages[alertMessages.length - 1];
             const basePayload = {
               title: latest.fromName || latest.fromEmail || 'New mail',
-              body: newMessages.length === 1
+              body: alertCount === 1
                 ? (latest.subject || '(no subject)')
-                : `${newMessages.length} new messages`,
+                : `${alertCount} new messages`,
               icon: '/icon-512.png',
               url: '/',
             };
