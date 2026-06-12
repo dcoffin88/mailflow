@@ -127,7 +127,7 @@ export default function ComposeModal() {
     if (composeData?.subject) setSubject(composeData.subject);
     if (composeData?.body !== undefined) setBody(composeData.body);
     if (composeData?.quotedBody !== undefined) setQuotedBody(composeData.quotedBody);
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- form initialisation runs once on mount; re-running on composeData changes would reset user edits
 
   const initialFromValue = () => {
     if (composeData?.aliasId && composeData?.accountId) {
@@ -165,7 +165,7 @@ export default function ComposeModal() {
     try {
       const data = await api.suggestContacts(q);
       return data.contacts || [];
-    } catch (_) { return []; }
+    } catch { return []; }
   }, []);
 
   const [replyAll, setReplyAll] = useState(() => !!composeData?.isReplyAll);
@@ -251,7 +251,7 @@ export default function ComposeModal() {
     try {
       const dataUrl = await resizeImageToDataUrl(file);
       editor?.chain().focus().setImage({ src: dataUrl }).run();
-    } catch (_) {}
+    } catch { /* intentional */ }
   }, [editor]);
 
   // Track visible viewport height so the compose panel shrinks with the keyboard.
@@ -317,7 +317,7 @@ export default function ComposeModal() {
       textareaRef.current.setSelectionRange(0, 0);
       textareaRef.current.focus();
     }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- cursor positioning runs once on mount; re-running on isReply/isForward changes is not desired
 
   // Close reply type dropdown on outside click
   useEffect(() => {
@@ -1553,7 +1553,7 @@ function Sep() {
   return <span style={{ width: 1, background: 'var(--border-subtle)', margin: '2px 4px', alignSelf: 'stretch' }} />;
 }
 
-function RichToolbar({ editor, onAttach, onInsertImage, onInsertTable, htmlMode, onToggleHtml }) {
+function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }) {
   const { t } = useTranslation();
   const savedSelectionRef = useRef(null);
   const [colorPos, setColorPos] = useState(null);
@@ -2019,7 +2019,7 @@ function ChipInput({ chips, onChipsChange, value, onChange, placeholder, autoFoc
         }
         setSuggestions(results);
         setSuggIdx(-1);
-      } catch (_) {}
+      } catch { /* intentional */ }
     }, 200);
     return () => clearTimeout(debounceRef.current);
   }, [value, getSuggestions]);

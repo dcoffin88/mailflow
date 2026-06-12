@@ -1666,7 +1666,7 @@ function IntegrationsTab() {
       window.removeEventListener('message', handleMessage);
       if (devicePollRef.current) clearInterval(devicePollRef.current);
     };
-  }, [setAccounts, t]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- mount-only; re-running on t/setAccounts change would clear an in-progress device-code poll
 
   const handleSaveMs = async () => {
     if (!msForm.clientId || !msForm.tenantId) {
