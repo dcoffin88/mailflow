@@ -34,6 +34,7 @@ export default function LockScreen() {
     try {
       await api.logout();
     } catch { /* intentional */ }
+    localStorage.removeItem('mailflow_locked_message');
     setLocked(false);
     setUser(null);
   }

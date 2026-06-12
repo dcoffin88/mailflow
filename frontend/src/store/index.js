@@ -28,6 +28,8 @@ export const useStore = create((set, get) => ({
   isLocked: localStorage.getItem('mailflow_locked') === '1',
   setLocked: (locked) => {
     if (locked) {
+      const { selectedMessageId } = get();
+      if (selectedMessageId) localStorage.setItem('mailflow_locked_message', selectedMessageId);
       localStorage.setItem('mailflow_locked', '1');
       set({
         isLocked: true,
@@ -39,8 +41,10 @@ export const useStore = create((set, get) => ({
         backfillProgress: {},
       });
     } else {
+      const restoredMessageId = localStorage.getItem('mailflow_locked_message') || null;
+      localStorage.removeItem('mailflow_locked_message');
       localStorage.removeItem('mailflow_locked');
-      set({ isLocked: false });
+      set({ isLocked: false, selectedMessageId: restoredMessageId });
     }
   },
 
