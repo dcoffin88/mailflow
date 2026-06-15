@@ -166,6 +166,7 @@ export const api = {
   updateRule:  (id, data) => request('PUT',    `/rules/${id}`, data),
   deleteRule:  (id)       => request('DELETE', `/rules/${id}`),
   reorderRules:(ids)      => request('PATCH',  '/rules/reorder', { ids }),
+  runRules:    (accountId) => request('POST',  '/rules/run', accountId ? { accountId } : {}),
 
   // Drafts
   saveDraft:   (data)              => request('POST',   '/mail/draft', data),

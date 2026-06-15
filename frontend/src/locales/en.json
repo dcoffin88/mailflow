@@ -456,7 +456,11 @@
       "saving": "Saving…",
       "errorRequired": "Rule name and at least one condition and action are required.",
       "errorMoveFolder": "Please enter a destination folder for the Move action.",
-      "errorSave": "Failed to save rule."
+      "errorSave": "Failed to save rule.",
+      "runButton": "Run rules on inbox",
+      "running": "Running…",
+      "runResult": "Done — {{matched}} of {{processed}} messages matched",
+      "runError": "Failed to run rules"
     },
     "blockList": {
       "description": "Emails from blocked senders are automatically moved to trash.",
