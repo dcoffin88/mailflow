@@ -95,50 +95,60 @@ router.post('/run', async (req, res) => {
       if (parseInt(rulesCheck.rows[0].cnt, 10) === 0) continue;
 
       const acctResult = await query(
-        'SELECT id, user_id, folder_mappings FROM email_accounts WHERE id = $1',
+        'SELECT * FROM email_accounts WHERE id = $1',
         [acctId]
       );
       const account = acctResult.rows[0];
       if (!account) continue;
 
-      const msgResult = await query(
-        `SELECT id, uid, folder, from_email, from_name, to_addresses, subject, has_attachments, is_read
-         FROM messages
-         WHERE account_id = $1 AND lower(folder) = 'inbox'
-         LIMIT 1000`,
-        [acctId]
-      );
-      if (!msgResult.rows.length) continue;
+      const BATCH = 500;
+      let lastId = null;
+      while (true) {
+        const msgResult = await query(
+          `SELECT id, uid, folder, from_email, from_name, to_addresses, subject, has_attachments, is_read
+           FROM messages
+           WHERE account_id = $1 AND lower(folder) = 'inbox'
+             ${lastId ? 'AND id > $3' : ''}
+           ORDER BY id
+           LIMIT $2`,
+          lastId ? [acctId, BATCH, lastId] : [acctId, BATCH]
+        );
+        if (!msgResult.rows.length) break;
 
-      const messages = msgResult.rows.map(row => {
-        let toArr = [];
-        try {
-          const raw = typeof row.to_addresses === 'string'
-            ? JSON.parse(row.to_addresses)
-            : row.to_addresses;
-          if (Array.isArray(raw)) {
-            toArr = raw.map(a => ({ email: a.address || a.email || '', name: a.name || '' }));
-          }
-        } catch {}
-        return {
-          id: row.id,
-          uid: row.uid,
-          folder: row.folder,
-          fromEmail: row.from_email || '',
-          fromName: row.from_name || '',
-          to: toArr,
-          subject: row.subject || '',
-          hasAttachments: !!row.has_attachments,
-          isRead: !!row.is_read,
-          is_read: !!row.is_read,
-          parsedHeaders: {},
-        };
-      });
+        lastId = msgResult.rows[msgResult.rows.length - 1].id;
 
-      const before = messages.length;
-      const { remaining } = await applyInboxRules(messages, account, imapMgr);
-      processed += before;
-      matched += before - remaining.length;
+        const messages = msgResult.rows.map(row => {
+          let toArr = [];
+          try {
+            const raw = typeof row.to_addresses === 'string'
+              ? JSON.parse(row.to_addresses)
+              : row.to_addresses;
+            if (Array.isArray(raw)) {
+              toArr = raw.map(a => ({ email: a.address || a.email || '', name: a.name || '' }));
+            }
+          } catch {}
+          return {
+            id: row.id,
+            uid: row.uid,
+            folder: row.folder,
+            fromEmail: row.from_email || '',
+            fromName: row.from_name || '',
+            to: toArr,
+            subject: row.subject || '',
+            hasAttachments: !!row.has_attachments,
+            isRead: !!row.is_read,
+            is_read: !!row.is_read,
+            parsedHeaders: {},
+          };
+        });
+
+        const before = messages.length;
+        const { remaining } = await applyInboxRules(messages, account, imapMgr);
+        processed += before;
+        matched += before - remaining.length;
+
+        if (msgResult.rows.length < BATCH) break;
+      }
     } catch (err) {
       console.error(`POST /rules/run error for account ${acctId}:`, err.message);
     }
