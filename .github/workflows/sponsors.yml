@@ -27,8 +27,7 @@ jobs:
                 sponsorshipsAsMaintainer(first: 100, includePrivate: false, activeOnly: false) {
                   nodes {
                     sponsorEntity {
-                      ... on User         { login avatarUrl(size: 64) url }
-                      ... on Organization { login avatarUrl(size: 64) url }
+                      ... on User { login avatarUrl(size: 64) url }
                     }
                   }
                 }
