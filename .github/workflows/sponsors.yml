@@ -24,7 +24,7 @@ jobs:
           const query = `
             query {
               user(login: "maathimself") {
-                sponsorshipsAsMaintainer(first: 100, includePrivate: false, activeOnly: true) {
+                sponsorshipsAsMaintainer(first: 100, includePrivate: false, activeOnly: false) {
                   nodes {
                     sponsorEntity {
                       ... on User         { login avatarUrl(size: 64) url }
