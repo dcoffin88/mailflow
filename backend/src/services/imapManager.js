@@ -1227,8 +1227,15 @@ export class ImapManager {
         // arrivals in the batch when more than `limit` messages arrive between ticks.
         // Skipped on first sync (maxKnownUid=0) because backfill owns initial population.
         if (maxKnownUid > 0) {
-          for await (const msg of client.fetch(`${maxKnownUid + 1}:*`, fetchQuery, { uid: true })) {
-            await processMsg(msg);
+          try {
+            for await (const msg of client.fetch(`${maxKnownUid + 1}:*`, fetchQuery, { uid: true })) {
+              await processMsg(msg);
+            }
+          } catch (err) {
+            if (!err.message?.toLowerCase().includes('invalid messageset')) throw err;
+            // UID range became stale due to concurrent expunge between SELECT and FETCH.
+            // Non-fatal — next sync will catch up.
+            console.warn(`Message sync phase 1 skipped for ${logAccount(account)}/${folder}: stale UID range after concurrent expunge`);
           }
         }
 
@@ -1236,8 +1243,15 @@ export class ImapManager {
         // recent messages, and handles the first-sync case (maxKnownUid=0).
         // Messages already inserted by Phase 1 are processed again here but the
         // ON CONFLICT DO UPDATE is idempotent and xmax=0 prevents double-notification.
-        for await (const msg of client.fetch(fetchRange, fetchQuery)) {
-          await processMsg(msg);
+        try {
+          for await (const msg of client.fetch(fetchRange, fetchQuery)) {
+            await processMsg(msg);
+          }
+        } catch (err) {
+          if (!err.message?.toLowerCase().includes('invalid messageset')) throw err;
+          // Sequence range became stale due to concurrent expunge between SELECT and FETCH.
+          // Non-fatal — next sync will catch up.
+          console.warn(`Message sync phase 2 skipped for ${logAccount(account)}/${folder}: stale sequence range after concurrent expunge`);
         }
 
         if (newMessages.length > 0) {
