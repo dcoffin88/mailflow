@@ -1123,6 +1123,10 @@ export class ImapManager {
         const processMsg = async (msg) => {
           try {
             const parsed = await parseMessage(msg);
+            if (!parsed.uid) {
+              console.warn(`Message sync skipped: IMAP FETCH returned no UID for ${account.email}/${folder}`);
+              return;
+            }
             let safeHtml = null, text = null, atts = [];
             if (prefetchBody && provider.fetchBody) {
               const body = extractBodyFromMsg(msg);
@@ -1536,6 +1540,10 @@ export class ImapManager {
             for await (const msg of bfClient.fetch(uidSet, bfQuery, { uid: true })) {
               try {
                 const parsed = await parseMessage(msg);
+                if (!parsed.uid) {
+                  console.warn(`Backfill skipped: IMAP FETCH returned no UID for ${account.email}/${folder}`);
+                  continue;
+                }
                 let safeHtml = null, bodyText = null, atts = [];
 
                 if (cfg.fetchBody) {
