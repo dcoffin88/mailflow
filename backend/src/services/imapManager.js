@@ -1232,7 +1232,7 @@ export class ImapManager {
               await processMsg(msg);
             }
           } catch (err) {
-            if (!err.message?.toLowerCase().includes('invalid messageset')) throw err;
+            if (!extractImapError(err).toLowerCase().includes('invalid messageset')) throw err;
             // UID range became stale due to concurrent expunge between SELECT and FETCH.
             // Non-fatal — next sync will catch up.
             console.warn(`Message sync phase 1 skipped for ${logAccount(account)}/${folder}: stale UID range after concurrent expunge`);
@@ -1248,7 +1248,7 @@ export class ImapManager {
             await processMsg(msg);
           }
         } catch (err) {
-          if (!err.message?.toLowerCase().includes('invalid messageset')) throw err;
+          if (!extractImapError(err).toLowerCase().includes('invalid messageset')) throw err;
           // Sequence range became stale due to concurrent expunge between SELECT and FETCH.
           // Non-fatal — next sync will catch up.
           console.warn(`Message sync phase 2 skipped for ${logAccount(account)}/${folder}: stale sequence range after concurrent expunge`);
