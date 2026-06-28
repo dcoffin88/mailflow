@@ -228,6 +228,9 @@ const SAME_VALUE_ALLOWED = {
   // "Tema" — "Theme" translates identically in es and it
   'admin.tabs.theme': [['es', 'it']],
 
+  // "Administration" — same spelling in de, en, fr
+  'admin.tabs.groupAdmin': [['de', 'en', 'fr']],
+
   // "Admin" — used as-is in de, en, es, fr, it
   'admin.users.adminBadge': [['de', 'en', 'es', 'fr', 'it']],
 
@@ -258,6 +261,11 @@ const DYNAMIC_KEYS = new Set([
   'admin.tabs.notifications',
   'admin.tabs.shortcuts',
   'admin.tabs.about',
+  // t(group.labelKey) — labelKey is a string property set in the TAB_GROUPS array
+  'admin.tabs.groupAccountMail',
+  'admin.tabs.groupDisplay',
+  'admin.tabs.groupSecurityIntegrations',
+  'admin.tabs.groupAdmin',
 ]);
 
 // JSX attribute names whose values must never be plain strings — always t().
