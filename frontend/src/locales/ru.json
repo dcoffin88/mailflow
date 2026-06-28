@@ -105,7 +105,9 @@
       "attachFile": "Прикрепить файл",
       "insertLink": "Вставить ссылку",
       "apply": "Применить",
-      "insertTable": "Вставить таблицу"
+      "insertTable": "Вставить таблицу",
+      "highlight": "Цвет выделения",
+      "removeHighlight": "Убрать выделение"
     }
   },
   "message": {

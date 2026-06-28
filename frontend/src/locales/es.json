@@ -105,7 +105,9 @@
       "attachFile": "Adjuntar archivo",
       "insertLink": "Insertar enlace",
       "apply": "Aplicar",
-      "insertTable": "Insertar tabla"
+      "insertTable": "Insertar tabla",
+      "highlight": "Color de resaltado",
+      "removeHighlight": "Quitar resaltado"
     }
   },
   "message": {

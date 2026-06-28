@@ -105,7 +105,9 @@
       "attachFile": "Datei anhängen",
       "insertLink": "Link einfügen",
       "apply": "Anwenden",
-      "insertTable": "Tabelle einfügen"
+      "insertTable": "Tabelle einfügen",
+      "highlight": "Hervorhebungsfarbe",
+      "removeHighlight": "Hervorhebung entfernen"
     }
   },
   "message": {

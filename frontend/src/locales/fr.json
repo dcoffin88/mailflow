@@ -105,7 +105,9 @@
       "attachFile": "Joindre un fichier",
       "insertLink": "Insérer un lien",
       "apply": "Appliquer",
-      "insertTable": "Insérer un tableau"
+      "insertTable": "Insérer un tableau",
+      "highlight": "Couleur de surlignage",
+      "removeHighlight": "Supprimer le surlignage"
     }
   },
   "message": {

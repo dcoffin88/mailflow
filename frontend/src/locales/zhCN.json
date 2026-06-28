@@ -105,7 +105,9 @@
       "attachFile": "附加文件",
       "insertLink": "插入链接",
       "apply": "应用",
-      "insertTable": "插入表格"
+      "insertTable": "插入表格",
+      "highlight": "突出显示颜色",
+      "removeHighlight": "移除高亮"
     }
   },
   "message": {

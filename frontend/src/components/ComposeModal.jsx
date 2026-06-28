@@ -8,7 +8,7 @@ import { useEditor, EditorContent, useEditorState } from '@tiptap/react';
 import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import { TextStyle, Color as TiptapColor, FontFamily } from '@tiptap/extension-text-style';
+import { TextStyle, Color as TiptapColor, FontFamily, BackgroundColor } from '@tiptap/extension-text-style';
 import { TextAlign } from '@tiptap/extension-text-align';
 import Image from '@tiptap/extension-image';
 import { Table } from '@tiptap/extension-table';
@@ -224,6 +224,7 @@ export default function ComposeModal() {
       TextStyle,
       TiptapColor,
       FontFamily,
+      BackgroundColor,
       FontSize,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Image.configure({ inline: true, allowBase64: true }),
@@ -1849,6 +1850,7 @@ export default function ComposeModal() {
 }
 
 const COLORS = ['#000000','#444444','#888888','#ffffff','#e03131','#f76707','#f59f00','#2f9e44','#1971c2','#7048e8','#c2255c'];
+const HIGHLIGHT_COLORS = ['#ffd43b','#ffa94d','#ff8787','#f783ac','#da77f2','#748ffc','#4dabf7','#38d9a9','#69db7c','#a9e34b'];
 const FontSize = Extension.create({
   name: 'fontSize',
   addOptions() { return { types: ['textStyle'] }; },
@@ -1926,17 +1928,20 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
   const { t } = useTranslation();
   const savedSelectionRef = useRef(null);
   const [colorPos, setColorPos] = useState(null);
+  const [highlightPos, setHighlightPos] = useState(null);
   const [emojiPos, setEmojiPos] = useState(null);
   const emojiPickerRef = useRef(null);
   const [linkPos, setLinkPos] = useState(null);
   const [tablePos, setTablePos] = useState(null);
   const [linkUrl, setLinkUrl] = useState('');
   const colorBtnRef = useRef(null);
+  const highlightBtnRef = useRef(null);
   const emojiBtnRef = useRef(null);
   const linkBtnRef = useRef(null);
   const tableBtnRef = useRef(null);
   const tablePopRef = useRef(null);
   const colorPopRef = useRef(null);
+  const highlightPopRef = useRef(null);
   const emojiPopRef = useRef(null);
   const linkPopRef = useRef(null);
   const linkInputRef = useRef(null);
@@ -1951,9 +1956,10 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
   }, [linkPos]);
 
   useEffect(() => {
-    if (!colorPos && !emojiPos && !linkPos && !tablePos) return;
+    if (!colorPos && !highlightPos && !emojiPos && !linkPos && !tablePos) return;
     const handler = (e) => {
       if (colorPos && colorBtnRef.current && !colorBtnRef.current.contains(e.target) && colorPopRef.current && !colorPopRef.current.contains(e.target)) setColorPos(null);
+      if (highlightPos && highlightBtnRef.current && !highlightBtnRef.current.contains(e.target) && highlightPopRef.current && !highlightPopRef.current.contains(e.target)) setHighlightPos(null);
       if (emojiPos && emojiBtnRef.current && !emojiBtnRef.current.contains(e.target) && emojiPopRef.current && !emojiPopRef.current.contains(e.target)) setEmojiPos(null);
       if (linkPos && linkBtnRef.current && !linkBtnRef.current.contains(e.target) && linkPopRef.current && !linkPopRef.current.contains(e.target)) setLinkPos(null);
       if (tablePos && tableBtnRef.current && !tableBtnRef.current.contains(e.target) && tablePopRef.current && !tablePopRef.current.contains(e.target)) setTablePos(null);
@@ -1964,7 +1970,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
       document.removeEventListener('mousedown', handler);
       document.removeEventListener('touchstart', handler);
     };
-  }, [colorPos, emojiPos, linkPos, tablePos]);
+  }, [colorPos, highlightPos, emojiPos, linkPos, tablePos]);
 
   const es = useEditorState({
     editor,
@@ -1980,6 +1986,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
       alignCenter: ed.isActive({ textAlign: 'center' }),
       alignRight: ed.isActive({ textAlign: 'right' }),
       color: ed.getAttributes('textStyle').color,
+      backgroundColor: ed.getAttributes('textStyle').backgroundColor,
       fontFamily: ed.getAttributes('textStyle').fontFamily,
       fontSize: ed.getAttributes('textStyle').fontSize,
     } : {},
@@ -1993,7 +2000,15 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
     const r = colorBtnRef.current.getBoundingClientRect();
     const left = Math.max(4, Math.min(r.left, window.innerWidth - 140));
     setColorPos({ top: r.bottom + 4, left });
-    setEmojiPos(null); setLinkPos(null);
+    setHighlightPos(null); setEmojiPos(null); setLinkPos(null);
+  };
+  const openHighlight = (e) => {
+    e.preventDefault();
+    if (highlightPos) { setHighlightPos(null); return; }
+    const r = highlightBtnRef.current.getBoundingClientRect();
+    const left = Math.max(4, Math.min(r.left, window.innerWidth - 140));
+    setHighlightPos({ top: r.bottom + 4, left });
+    setColorPos(null); setEmojiPos(null); setLinkPos(null);
   };
   const openEmoji = async (e) => {
     e.preventDefault();
@@ -2013,7 +2028,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
       ? { top: r.bottom + 4, left }
       : { bottom: window.innerHeight - r.top + 4, left };
     setEmojiPos(pos);
-    setColorPos(null); setLinkPos(null);
+    setColorPos(null); setHighlightPos(null); setLinkPos(null);
   };
   const openLink = (e) => {
     e.preventDefault();
@@ -2021,7 +2036,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
     const r = linkBtnRef.current.getBoundingClientRect();
     const left = Math.max(4, Math.min(r.left, window.innerWidth - 300));
     setLinkPos({ top: r.bottom + 4, left });
-    setColorPos(null); setEmojiPos(null);
+    setColorPos(null); setHighlightPos(null); setEmojiPos(null);
     setLinkUrl(editor.getAttributes('link').href || '');
   };
   const submitLink = () => {
@@ -2050,7 +2065,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
     const r = tableBtnRef.current.getBoundingClientRect();
     const left = Math.max(4, Math.min(r.left, window.innerWidth - 200));
     setTablePos({ top: r.bottom + 4, left });
-    setColorPos(null); setEmojiPos(null); setLinkPos(null);
+    setColorPos(null); setHighlightPos(null); setEmojiPos(null); setLinkPos(null);
   };
 
   const tb = (active, title, onMD, children) => (
@@ -2126,6 +2141,12 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
           style={{ background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer', display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1 }}>A</span>
           <span style={{ width: 12, height: 3, borderRadius: 1, background: es.color || 'var(--text-primary)' }} />
+        </button>
+
+        <button ref={highlightBtnRef} title={t('compose.toolbar.highlight')} onMouseDown={openHighlight}
+          style={{ background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer', display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1 }}>A</span>
+          <span style={{ width: 12, height: 3, borderRadius: 1, background: es.backgroundColor || '#ffd43b' }} />
         </button>
 
         <Sep />
@@ -2204,6 +2225,24 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
           ))}
           <button onMouseDown={e => { e.preventDefault(); editor.chain().focus().unsetColor().run(); setColorPos(null); }}
             title={t('compose.toolbar.removeColor')}
+            style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer', padding: 0, fontSize: 9, color: 'var(--text-tertiary)', background: 'none' }}>✕</button>
+        </div>
+      )}
+
+      {highlightPos && (
+        <div ref={highlightPopRef} style={{
+          position: 'fixed', top: highlightPos.top, left: highlightPos.left, zIndex: 9900,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+          borderRadius: 8, padding: 8, boxShadow: 'var(--shadow-popover)',
+          display: 'flex', flexWrap: 'wrap', gap: 4, width: 136,
+        }}>
+          {HIGHLIGHT_COLORS.map(c => (
+            <button key={c} onMouseDown={e => { e.preventDefault(); editor.chain().focus().setBackgroundColor(c).run(); setHighlightPos(null); }}
+              style={{ width: 18, height: 18, borderRadius: 4, background: c, border: '1px solid var(--border)', cursor: 'pointer', padding: 0,
+                outline: editor.isActive('textStyle', { backgroundColor: c }) ? '2px solid var(--accent)' : 'none', outlineOffset: 1 }} />
+          ))}
+          <button onMouseDown={e => { e.preventDefault(); editor.chain().focus().unsetBackgroundColor().run(); setHighlightPos(null); }}
+            title={t('compose.toolbar.removeHighlight')}
             style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer', padding: 0, fontSize: 9, color: 'var(--text-tertiary)', background: 'none' }}>✕</button>
         </div>
       )}

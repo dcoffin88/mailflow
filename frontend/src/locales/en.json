@@ -105,7 +105,9 @@
       "attachFile": "Attach file",
       "insertLink": "Insert link",
       "apply": "Apply",
-      "insertTable": "Insert table"
+      "insertTable": "Insert table",
+      "highlight": "Highlight color",
+      "removeHighlight": "Remove highlight"
     }
   },
   "message": {
