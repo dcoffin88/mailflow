@@ -2144,9 +2144,8 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
         </button>
 
         <button ref={highlightBtnRef} title={t('compose.toolbar.highlight')} onMouseDown={openHighlight}
-          style={{ background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer', display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1 }}>A</span>
-          <span style={{ width: 12, height: 3, borderRadius: 1, background: es.backgroundColor || '#ffd43b' }} />
+          style={{ background: 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', lineHeight: 1, background: es.backgroundColor || '#ffd43b', padding: '0 2px', borderRadius: 2, border: '1px solid rgba(0,0,0,0.2)' }}>A</span>
         </button>
 
         <Sep />
@@ -2225,7 +2224,8 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
           ))}
           <button onMouseDown={e => { e.preventDefault(); editor.chain().focus().unsetColor().run(); setColorPos(null); }}
             title={t('compose.toolbar.removeColor')}
-            style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer', padding: 0, fontSize: 9, color: 'var(--text-tertiary)', background: 'none' }}>✕</button>
+            style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer', padding: 0,
+              background: 'linear-gradient(to bottom right, white calc(50% - 1px), #e03131 calc(50% - 1px), #e03131 calc(50% + 1px), white calc(50% + 1px))' }} />
         </div>
       )}
 
@@ -2243,7 +2243,8 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml }
           ))}
           <button onMouseDown={e => { e.preventDefault(); editor.chain().focus().unsetBackgroundColor().run(); setHighlightPos(null); }}
             title={t('compose.toolbar.removeHighlight')}
-            style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer', padding: 0, fontSize: 9, color: 'var(--text-tertiary)', background: 'none' }}>✕</button>
+            style={{ width: 18, height: 18, borderRadius: 4, border: '1px solid var(--border)', cursor: 'pointer', padding: 0,
+              background: 'linear-gradient(to bottom right, white calc(50% - 1px), #e03131 calc(50% - 1px), #e03131 calc(50% + 1px), white calc(50% + 1px))' }} />
         </div>
       )}
 
