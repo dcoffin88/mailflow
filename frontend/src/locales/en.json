@@ -408,7 +408,11 @@
       "integrations": "Integrations",
       "theme": "Theme",
       "fontsAndLanguage": "Language & Font",
-      "about": "About"
+      "about": "About",
+      "groupAccountMail": "Account & Mail",
+      "groupDisplay": "Display",
+      "groupSecurityIntegrations": "Security & Integrations",
+      "groupAdmin": "Administration"
     },
     "rules": {
       "title": "Inbox rules",

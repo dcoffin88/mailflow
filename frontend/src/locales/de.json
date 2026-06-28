@@ -408,7 +408,11 @@
       "theme": "Design",
       "fontsAndLanguage": "Sprache & Schrift",
       "about": "Über",
-      "rules": "Regeln"
+      "rules": "Regeln",
+      "groupAccountMail": "Konto und Mail",
+      "groupDisplay": "Anzeige",
+      "groupSecurityIntegrations": "Sicherheit und Integrationen",
+      "groupAdmin": "Administration"
     },
     "accounts": {
       "title": "E-Mail-Konten",

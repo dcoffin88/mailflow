@@ -408,7 +408,11 @@
       "integrations": "Интеграции",
       "theme": "Тема",
       "fontsAndLanguage": "Язык и шрифт",
-      "about": "О приложении"
+      "about": "О приложении",
+      "groupAccountMail": "Аккаунт и почта",
+      "groupDisplay": "Отображение",
+      "groupSecurityIntegrations": "Безопасность и интеграции",
+      "groupAdmin": "Администрирование"
     },
     "rules": {
       "title": "Правила входящих",

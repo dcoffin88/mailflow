@@ -408,7 +408,11 @@
       "integrations": "Intégrations",
       "theme": "Thème",
       "fontsAndLanguage": "Langue & Police",
-      "about": "À propos"
+      "about": "À propos",
+      "groupAccountMail": "Compte et courrier",
+      "groupDisplay": "Affichage",
+      "groupSecurityIntegrations": "Sécurité et intégrations",
+      "groupAdmin": "Administration"
     },
     "rules": {
       "title": "Règles de boîte de réception",

@@ -408,7 +408,11 @@
       "integrations": "Integrazioni",
       "theme": "Tema",
       "fontsAndLanguage": "Lingua e font",
-      "about": "Informazioni"
+      "about": "Informazioni",
+      "groupAccountMail": "Account e posta",
+      "groupDisplay": "Schermo",
+      "groupSecurityIntegrations": "Sicurezza e integrazioni",
+      "groupAdmin": "Amministrazione"
     },
     "rules": {
       "title": "Regole posta in arrivo",

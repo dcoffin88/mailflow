@@ -408,7 +408,11 @@
       "integrations": "集成",
       "theme": "主题",
       "fontsAndLanguage": "语言与字体",
-      "about": "关于"
+      "about": "关于",
+      "groupAccountMail": "账户与邮件",
+      "groupDisplay": "显示",
+      "groupSecurityIntegrations": "安全与集成",
+      "groupAdmin": "管理"
     },
     "rules": {
       "title": "收件箱规则",

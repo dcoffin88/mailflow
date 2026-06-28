@@ -408,7 +408,11 @@
       "integrations": "Integraciones",
       "theme": "Tema",
       "fontsAndLanguage": "Idioma y Fuente",
-      "about": "Acerca de"
+      "about": "Acerca de",
+      "groupAccountMail": "Cuenta y correo",
+      "groupDisplay": "Visualización",
+      "groupSecurityIntegrations": "Seguridad e integraciones",
+      "groupAdmin": "Administración"
     },
     "rules": {
       "title": "Reglas de bandeja de entrada",

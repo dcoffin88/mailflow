@@ -4540,23 +4540,47 @@ function RulesAndBlockListTab({ initialSubTab }) {
   );
 }
 
+const TAB_GROUPS = [
+  { id: 'account-mail', labelKey: 'admin.tabs.groupAccountMail', tabIds: ['accounts', 'notifications', 'rules'] },
+  { id: 'display', labelKey: 'admin.tabs.groupDisplay', tabIds: ['appearance', 'shortcuts'] },
+  { id: 'security-integrations', labelKey: 'admin.tabs.groupSecurityIntegrations', tabIds: ['security', 'integrations'] },
+  { id: 'admin', labelKey: 'admin.tabs.groupAdmin', tabIds: ['users', 'sso'] },
+];
+
 const TABS = [
+  // Account & Mail
   {
     id: 'accounts', labelKey: 'admin.tabs.accounts',
     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>,
   },
   {
+    id: 'notifications', labelKey: 'admin.tabs.notifications',
+    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>,
+  },
+  {
     id: 'rules', labelKey: 'admin.tabs.rules',
     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>,
   },
+  // Display
   {
     id: 'appearance', labelKey: 'admin.tabs.appearance',
     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
   },
   {
+    id: 'shortcuts', labelKey: 'admin.tabs.shortcuts',
+    mobileHidden: true,
+    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><rect x="2" y="7" width="6" height="4" rx="1"/><rect x="9" y="7" width="6" height="4" rx="1"/><rect x="16" y="7" width="6" height="4" rx="1"/><rect x="2" y="13" width="9" height="4" rx="1"/><rect x="13" y="13" width="9" height="4" rx="1"/></svg>,
+  },
+  // Security & Integrations
+  {
+    id: 'security', labelKey: 'admin.tabs.security',
+    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+  },
+  {
     id: 'integrations', labelKey: 'admin.tabs.integrations',
     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><circle cx="12" cy="12" r="3"/><path d="M6.343 6.343a8 8 0 000 11.314M17.657 6.343a8 8 0 010 11.314M3 12h1m16 0h1M12 3v1m0 16v1"/></svg>,
   },
+  // Admin
   {
     id: 'users', labelKey: 'admin.tabs.users',
     adminOnly: true,
@@ -4567,19 +4591,7 @@ const TABS = [
     adminOnly: true,
     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>,
   },
-  {
-    id: 'security', labelKey: 'admin.tabs.security',
-    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
-  },
-  {
-    id: 'notifications', labelKey: 'admin.tabs.notifications',
-    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>,
-  },
-  {
-    id: 'shortcuts', labelKey: 'admin.tabs.shortcuts',
-    mobileHidden: true,
-    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><rect x="2" y="7" width="6" height="4" rx="1"/><rect x="9" y="7" width="6" height="4" rx="1"/><rect x="16" y="7" width="6" height="4" rx="1"/><rect x="2" y="13" width="9" height="4" rx="1"/><rect x="13" y="13" width="9" height="4" rx="1"/></svg>,
-  },
+  // About (ungrouped, pinned to bottom)
   {
     id: 'about', labelKey: 'admin.tabs.about',
     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="8"/><line x1="12" y1="12" x2="12" y2="16"/></svg>,
@@ -5977,27 +5989,73 @@ export default function AdminPanel() {
             {searchInput(true)}
           </div>
 
-          {visibleTabs.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => handleTabClick(tab.id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 9,
-                padding: '8px 10px', borderRadius: 7, border: 'none',
-                background: adminTab === tab.id && !searchResults ? 'var(--bg-hover)' : 'transparent',
-                color: adminTab === tab.id && !searchResults ? 'var(--text-primary)' : 'var(--text-secondary)',
-                cursor: 'pointer', fontSize: 13, fontWeight: adminTab === tab.id && !searchResults ? 500 : 400,
-                width: '100%', textAlign: 'left', transition: 'all 0.1s',
-              }}
-              onMouseEnter={e => { if (!(adminTab === tab.id && !searchResults)) e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
-              onMouseLeave={e => { if (!(adminTab === tab.id && !searchResults)) e.currentTarget.style.background = 'transparent'; }}
-            >
-              <span style={{ color: adminTab === tab.id && !searchResults ? 'var(--accent)' : 'var(--text-tertiary)' }}>
-                {tab.icon}
-              </span>
-              {t(tab.labelKey)}
-            </button>
-          ))}
+          {TAB_GROUPS.map((group, gi) => {
+            const groupTabs = visibleTabs.filter(tab => group.tabIds.includes(tab.id));
+            if (groupTabs.length === 0) return null;
+            return (
+              <div key={group.id} style={{ marginBottom: gi < TAB_GROUPS.length - 1 ? 4 : 0 }}>
+                <div style={{
+                  fontSize: 10, fontWeight: 700, color: 'var(--text-secondary)',
+                  letterSpacing: '0.07em', textTransform: 'uppercase',
+                  padding: gi === 0 ? '2px 10px 3px' : '10px 10px 3px',
+                  borderTop: gi === 0 ? 'none' : '1px solid var(--border-subtle)',
+                  marginTop: gi === 0 ? 0 : 4,
+                }}>
+                  {t(group.labelKey)}
+                </div>
+                {groupTabs.map(tab => {
+                  const isActive = adminTab === tab.id && !searchResults;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => handleTabClick(tab.id)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 9,
+                        padding: '7px 10px', borderRadius: 7, border: 'none',
+                        background: isActive ? 'var(--bg-hover)' : 'transparent',
+                        color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        cursor: 'pointer', fontSize: 13, fontWeight: isActive ? 500 : 400,
+                        width: '100%', textAlign: 'left', transition: 'all 0.1s',
+                      }}
+                      onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
+                      onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+                    >
+                      <span style={{ color: isActive ? 'var(--accent)' : 'var(--text-tertiary)' }}>
+                        {tab.icon}
+                      </span>
+                      {t(tab.labelKey)}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+
+          {/* About — ungrouped, sits above the close button */}
+          {visibleTabs.filter(tab => !TAB_GROUPS.some(g => g.tabIds.includes(tab.id))).map(tab => {
+            const isActive = adminTab === tab.id && !searchResults;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => handleTabClick(tab.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 9,
+                  padding: '7px 10px', borderRadius: 7, border: 'none',
+                  background: isActive ? 'var(--bg-hover)' : 'transparent',
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  cursor: 'pointer', fontSize: 13, fontWeight: isActive ? 500 : 400,
+                  width: '100%', textAlign: 'left', transition: 'all 0.1s',
+                }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+              >
+                <span style={{ color: isActive ? 'var(--accent)' : 'var(--text-tertiary)' }}>
+                  {tab.icon}
+                </span>
+                {t(tab.labelKey)}
+              </button>
+            );
+          })}
 
           <div style={{ flex: 1 }} />
 
