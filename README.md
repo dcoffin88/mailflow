@@ -28,17 +28,24 @@ If you contribute code, please read the [Contributor License Agreement](CLA.md).
 ## Features
 
 - **Unified inbox** — all accounts merged in one view, sorted by date
+- **Conversation threads** — messages grouped into reply chains with inline sent replies
+- **Rich text compose** — WYSIWYG editor with font family, size, color, highlight, tables, emoji, links, and attachments
+- **Attachments** — send and receive file attachments across all accounts
 - **Multiple layouts** — classic, compact, wide reader, vertical split, and more
 - **Multiple themes** — dark, light, and several color schemes
-- **Multi-language UI** — English, French, Spanish, and Italian
+- **Multi-language UI** — English, French, Spanish, Italian, German, Russian, and Simplified Chinese
 - **Full-text search** — across all connected accounts simultaneously
-- **Real-time notifications** — WebSocket-powered new-mail toasts and web push (PWA/browser)
+- **Real-time notifications** — WebSocket-powered new-mail toasts and web push notifications
+- **PWA** — installable as a desktop or mobile app with push notification support
+- **Command palette** — Cmd+K / Ctrl+K quick-access for actions and navigation
+- **Keyboard shortcuts** — full shortcut set, fully customisable per user
+- **Smart contact autocomplete** — learns from sent mail to rank suggestions
 - **Reply / Forward / Compose** — correct per-account SMTP routing
 - **Folder navigation** — expand any account to browse folders
-- **Star, delete, mark read** — synced back to IMAP
+- **Star, archive, delete, mark read** — synced back to IMAP
 - **User management** — admin panel, invite-only registration, invite emails
 - **SSO / OIDC** — single sign-on via any OpenID Connect provider
-- **Microsoft 365 / OAuth2** — for work accounts that require modern auth
+- **Microsoft 365 / OAuth2** — work accounts via Azure App Registration; personal Outlook.com via device code flow
 
 ---
 
@@ -145,7 +152,7 @@ docker compose pull
 docker compose up -d
 ```
 
-To pin to a specific version instead of `latest`, add `MAILFLOW_VERSION=1.0.0` to your `.env`.
+To pin to a specific version instead of `latest`, add `MAILFLOW_VERSION=1.7.3` to your `.env`.
 
 ---
 
@@ -397,11 +404,16 @@ Gmail requires an **App Password** (not your normal password):
 
 ### Microsoft 365 / Outlook (OAuth2)
 
-Work/school accounts that require modern authentication:
+**Work / school accounts (Microsoft 365):** require modern auth via Azure App Registration:
 
 1. In MailFlow settings → Integrations → Microsoft 365 — follow the Azure App
    Registration instructions shown there
 2. After saving the config, click **Connect Microsoft account**
+
+**Personal accounts (Outlook.com / Hotmail):** no Azure registration needed — uses the device code flow:
+
+1. Settings → Accounts → Add Account → Outlook.com / Hotmail
+2. MailFlow displays a short code — visit [microsoft.com/devicelogin](https://microsoft.com/devicelogin) and enter it to authorise
 
 ### Custom IMAP
 
