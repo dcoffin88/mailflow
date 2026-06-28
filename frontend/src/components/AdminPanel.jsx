@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/index.js';
 import { useMobile } from '../hooks/useMobile.js';
@@ -5718,51 +5718,58 @@ function LinkedIdentitiesSection() {
   );
 }
 
-const SEARCH_INDEX = [
-  // Accounts
-  { label: 'Email accounts', keywords: ['account', 'email', 'imap', 'smtp', 'gmail', 'yahoo', 'icloud', 'password', 'add account', 'connect'], tab: 'accounts', breadcrumb: 'Accounts' },
-  { label: 'Signatures', keywords: ['signature', 'sign off', 'footer', 'alias', 'send as'], tab: 'accounts', breadcrumb: 'Accounts' },
-  // Rules
-  { label: 'Filter rules', keywords: ['rule', 'filter', 'condition', 'action', 'move', 'auto', 'automate', 'inbox rule', 'sort'], tab: 'rules', subtab: 'rules', breadcrumb: 'Rules › Rules' },
-  { label: 'Block list', keywords: ['block', 'blocked', 'sender', 'blacklist', 'spam', 'domain'], tab: 'rules', subtab: 'block-list', breadcrumb: 'Rules › Block List' },
-  // Appearance > Theme
-  { label: 'Theme', keywords: ['theme', 'dark', 'light', 'color', 'colour', 'dark mode', 'light mode'], tab: 'appearance', subtab: 'theme', breadcrumb: 'Appearance › Theme' },
-  // Appearance > Layout
-  { label: 'Layout', keywords: ['layout', 'pane', 'split', 'preview', 'reading pane', 'side by side', 'stacked'], tab: 'appearance', subtab: 'layout', breadcrumb: 'Appearance › Layout' },
-  { label: 'Scrolling mode', keywords: ['scroll', 'infinite', 'paginated', 'pagination', 'pages'], tab: 'appearance', subtab: 'layout', breadcrumb: 'Appearance › Layout' },
-  { label: 'Messages per page', keywords: ['per page', 'batch', 'messages per page', 'count', '25', '50', '100', '200', 'page size'], tab: 'appearance', subtab: 'layout', breadcrumb: 'Appearance › Layout' },
-  { label: 'Hover quick actions', keywords: ['hover', 'quick actions', 'hover buttons', 'row actions'], tab: 'appearance', subtab: 'layout', breadcrumb: 'Appearance › Layout' },
-  { label: 'Swipe actions', keywords: ['swipe', 'gesture', 'mobile', 'swipe left', 'swipe right', 'touch'], tab: 'appearance', subtab: 'layout', breadcrumb: 'Appearance › Layout' },
-  { label: 'Sync interval', keywords: ['sync', 'interval', 'frequency', 'refresh', 'poll', 'check mail', '15s', '30s', '60s'], tab: 'appearance', subtab: 'layout', breadcrumb: 'Appearance › Layout' },
-  { label: 'Conversation threading', keywords: ['thread', 'conversation', 'grouping', 'threading', 'group'], tab: 'appearance', subtab: 'layout', breadcrumb: 'Appearance › Layout' },
-  { label: 'Compose format', keywords: ['compose', 'format', 'rich text', 'plain text', 'html', 'editor'], tab: 'appearance', subtab: 'layout', breadcrumb: 'Appearance › Layout' },
-  { label: 'Default reply action', keywords: ['reply', 'reply all', 'default reply'], tab: 'appearance', subtab: 'layout', breadcrumb: 'Appearance › Layout' },
-  // Appearance > Fonts & Language
-  { label: 'Language', keywords: ['language', 'locale', 'french', 'english', 'spanish', 'german', 'deutsch', 'russian', 'chinese', 'italian', 'français', 'español'], tab: 'appearance', subtab: 'fonts', breadcrumb: 'Appearance › Language & Font' },
-  { label: 'Font size', keywords: ['font size', 'text size', 'zoom', 'scale', 'accessibility', 'larger text'], tab: 'appearance', subtab: 'fonts', breadcrumb: 'Appearance › Language & Font' },
-  { label: 'Typography', keywords: ['font', 'typography', 'typeface', 'serif', 'sans', 'monospace', 'reading font'], tab: 'appearance', subtab: 'fonts', breadcrumb: 'Appearance › Language & Font' },
-  // Integrations
-  { label: 'Microsoft 365 / Outlook', keywords: ['microsoft', 'outlook', '365', 'oauth', 'azure', 'client id', 'tenant', 'ms365', 'office'], tab: 'integrations', breadcrumb: 'Integrations' },
-  // Security
-  { label: 'Two-factor authentication', keywords: ['2fa', 'totp', 'authenticator', 'two factor', 'otp', 'two-factor', 'mfa', 'security code'], tab: 'security', subtab: 'security', breadcrumb: 'Security › Security' },
-  { label: 'Linked identities', keywords: ['sso', 'linked', 'identity', 'provider', 'link', 'unlink', 'oidc', 'connect identity'], tab: 'security', subtab: 'security', breadcrumb: 'Security › Security' },
-  { label: 'Login protection', keywords: ['login', 'attempts', 'brute force', 'lockout', 'max attempts', 'rate limit'], tab: 'security', subtab: 'security', adminOnly: true, breadcrumb: 'Security › Security' },
-  { label: 'Mail server policy', keywords: ['server', 'tls', 'insecure', 'private ip', 'port', 'mail server', 'ssl'], tab: 'security', subtab: 'security', adminOnly: true, breadcrumb: 'Security › Security' },
-  { label: 'Activity log', keywords: ['log', 'activity', 'auth events', 'history', 'login history', 'audit'], tab: 'security', subtab: 'security', adminOnly: true, breadcrumb: 'Security › Security' },
-  { label: 'Block remote images', keywords: ['images', 'remote', 'block', 'privacy', 'tracking pixel', 'spy pixel', 'block images'], tab: 'security', subtab: 'privacy', breadcrumb: 'Security › Privacy' },
-  { label: 'Allowed senders & domains', keywords: ['whitelist', 'allow', 'sender', 'trusted', 'safe', 'allowed domain', 'image whitelist'], tab: 'security', subtab: 'privacy', breadcrumb: 'Security › Privacy' },
-  // Notifications
-  { label: 'Notification sound', keywords: ['sound', 'notification sound', 'audio', 'alert', 'beep', 'chime'], tab: 'notifications', breadcrumb: 'Notifications' },
-  { label: 'App badge', keywords: ['badge', 'app icon', 'pwa', 'unread count', 'icon badge'], tab: 'notifications', breadcrumb: 'Notifications' },
-  { label: 'Favicon badge', keywords: ['favicon', 'tab badge', 'browser tab', 'tab icon', 'unread dot'], tab: 'notifications', breadcrumb: 'Notifications' },
-  { label: 'Push notifications', keywords: ['push', 'notification', 'browser notification', 'desktop notification', 'permission'], tab: 'notifications', breadcrumb: 'Notifications' },
-  // Shortcuts (desktop only)
-  { label: 'Keyboard shortcuts', keywords: ['shortcut', 'keyboard', 'hotkey', 'keybind', 'key binding', 'compose shortcut', 'reply shortcut'], tab: 'shortcuts', mobileHidden: true, breadcrumb: 'Shortcuts' },
-  // Admin-only
-  { label: 'Users', keywords: ['user', 'invite', 'admin', 'role', 'manage users', 'add user'], tab: 'users', adminOnly: true, breadcrumb: 'Users' },
-  { label: 'System email', keywords: ['system email', 'smtp', 'admin email', 'invite email', 'outgoing email'], tab: 'users', adminOnly: true, breadcrumb: 'Users' },
-  { label: 'SSO / OIDC', keywords: ['sso', 'oidc', 'single sign on', 'oauth', 'provider', 'identity provider'], tab: 'sso', adminOnly: true, breadcrumb: 'SSO' },
-];
+function makeSearchIndex(t) {
+  const tabLabel = (id) => t(`admin.tabs.${id}`);
+  const layoutCrumb = `${tabLabel('appearance')} › ${t('admin.appearance.layout')}`;
+  const fontsCrumb = `${tabLabel('appearance')} › ${tabLabel('fontsAndLanguage')}`;
+  const secCrumb = `${tabLabel('security')} › ${tabLabel('security')}`;
+  const privCrumb = `${tabLabel('security')} › ${tabLabel('privacy')}`;
+  return [
+    // Accounts
+    { label: t('admin.accounts.title'), keywords: ['account', 'email', 'imap', 'smtp', 'gmail', 'yahoo', 'icloud', 'password', 'add account', 'connect'], tab: 'accounts', breadcrumb: tabLabel('accounts') },
+    { label: t('admin.accounts.signatureSection'), keywords: ['signature', 'sign off', 'footer', 'alias', 'send as'], tab: 'accounts', breadcrumb: tabLabel('accounts') },
+    // Rules
+    { label: t('admin.rules.title'), keywords: ['rule', 'filter', 'condition', 'action', 'move', 'auto', 'automate', 'inbox rule', 'sort'], tab: 'rules', subtab: 'rules', breadcrumb: `${tabLabel('rules')} › ${t('admin.rules.subTabRules')}` },
+    { label: t('admin.rules.subTabBlockList'), keywords: ['block', 'blocked', 'sender', 'blacklist', 'spam', 'domain'], tab: 'rules', subtab: 'block-list', breadcrumb: `${tabLabel('rules')} › ${t('admin.rules.subTabBlockList')}` },
+    // Appearance > Theme
+    { label: tabLabel('theme'), keywords: ['theme', 'dark', 'light', 'color', 'colour', 'dark mode', 'light mode'], tab: 'appearance', subtab: 'theme', breadcrumb: `${tabLabel('appearance')} › ${tabLabel('theme')}` },
+    // Appearance > Layout
+    { label: t('admin.appearance.layout'), keywords: ['layout', 'pane', 'split', 'preview', 'reading pane', 'side by side', 'stacked'], tab: 'appearance', subtab: 'layout', breadcrumb: layoutCrumb },
+    { label: t('admin.messageList.scrollingMode'), keywords: ['scroll', 'infinite', 'paginated', 'pagination', 'pages'], tab: 'appearance', subtab: 'layout', breadcrumb: layoutCrumb },
+    { label: t('admin.messageList.perPagePaginated'), keywords: ['per page', 'batch', 'messages per page', 'count', '25', '50', '100', '200', 'page size'], tab: 'appearance', subtab: 'layout', breadcrumb: layoutCrumb },
+    { label: t('admin.messageList.hoverQuickActionsMode'), keywords: ['hover', 'quick actions', 'hover buttons', 'row actions'], tab: 'appearance', subtab: 'layout', breadcrumb: layoutCrumb },
+    { label: t('admin.messageList.swipeActions'), keywords: ['swipe', 'gesture', 'mobile', 'swipe left', 'swipe right', 'touch'], tab: 'appearance', subtab: 'layout', breadcrumb: layoutCrumb },
+    { label: t('admin.messageList.syncFrequency'), keywords: ['sync', 'interval', 'frequency', 'refresh', 'poll', 'check mail', '15s', '30s', '60s'], tab: 'appearance', subtab: 'layout', breadcrumb: layoutCrumb },
+    { label: t('admin.messageList.threadingMode'), keywords: ['thread', 'conversation', 'grouping', 'threading', 'group'], tab: 'appearance', subtab: 'layout', breadcrumb: layoutCrumb },
+    { label: t('admin.messageList.composeFormat'), keywords: ['compose', 'format', 'rich text', 'plain text', 'html', 'editor'], tab: 'appearance', subtab: 'layout', breadcrumb: layoutCrumb },
+    { label: t('admin.messageList.defaultReplyAction'), keywords: ['reply', 'reply all', 'default reply'], tab: 'appearance', subtab: 'layout', breadcrumb: layoutCrumb },
+    // Appearance > Fonts & Language
+    { label: t('admin.appearance.language'), keywords: ['language', 'locale', 'french', 'english', 'spanish', 'german', 'deutsch', 'russian', 'chinese', 'italian', 'français', 'español'], tab: 'appearance', subtab: 'fonts', breadcrumb: fontsCrumb },
+    { label: t('admin.appearance.fontSize'), keywords: ['font size', 'text size', 'zoom', 'scale', 'accessibility', 'larger text'], tab: 'appearance', subtab: 'fonts', breadcrumb: fontsCrumb },
+    { label: t('admin.appearance.typography'), keywords: ['font', 'typography', 'typeface', 'serif', 'sans', 'monospace', 'reading font'], tab: 'appearance', subtab: 'fonts', breadcrumb: fontsCrumb },
+    // Integrations
+    { label: t('admin.integrations.microsoft.title'), keywords: ['microsoft', 'outlook', '365', 'oauth', 'azure', 'client id', 'tenant', 'ms365', 'office'], tab: 'integrations', breadcrumb: tabLabel('integrations') },
+    // Security
+    { label: t('admin.security.totpTitle'), keywords: ['2fa', 'totp', 'authenticator', 'two factor', 'otp', 'two-factor', 'mfa', 'security code'], tab: 'security', subtab: 'security', breadcrumb: secCrumb },
+    { label: t('admin.security.ssoTitle'), keywords: ['sso', 'linked', 'identity', 'provider', 'link', 'unlink', 'oidc', 'connect identity'], tab: 'security', subtab: 'security', breadcrumb: secCrumb },
+    { label: t('admin.security.loginProtectionTitle'), keywords: ['login', 'attempts', 'brute force', 'lockout', 'max attempts', 'rate limit'], tab: 'security', subtab: 'security', adminOnly: true, breadcrumb: secCrumb },
+    { label: t('admin.security.mailPolicyTitle'), keywords: ['server', 'tls', 'insecure', 'private ip', 'port', 'mail server', 'ssl'], tab: 'security', subtab: 'security', adminOnly: true, breadcrumb: secCrumb },
+    { label: t('admin.security.activityTitle'), keywords: ['log', 'activity', 'auth events', 'history', 'login history', 'audit'], tab: 'security', subtab: 'security', adminOnly: true, breadcrumb: secCrumb },
+    { label: t('admin.privacy.blockImages'), keywords: ['images', 'remote', 'block', 'privacy', 'tracking pixel', 'spy pixel', 'block images'], tab: 'security', subtab: 'privacy', breadcrumb: privCrumb },
+    { label: t('admin.privacy.allowedSenders'), keywords: ['whitelist', 'allow', 'sender', 'trusted', 'safe', 'allowed domain', 'image whitelist'], tab: 'security', subtab: 'privacy', breadcrumb: privCrumb },
+    // Notifications
+    { label: t('admin.search.notificationSound'), keywords: ['sound', 'notification sound', 'audio', 'alert', 'beep', 'chime'], tab: 'notifications', breadcrumb: tabLabel('notifications') },
+    { label: t('admin.notifications.appBadge'), keywords: ['badge', 'app icon', 'pwa', 'unread count', 'icon badge'], tab: 'notifications', breadcrumb: tabLabel('notifications') },
+    { label: t('admin.notifications.faviconBadge'), keywords: ['favicon', 'tab badge', 'browser tab', 'tab icon', 'unread dot'], tab: 'notifications', breadcrumb: tabLabel('notifications') },
+    { label: t('admin.push.title'), keywords: ['push', 'notification', 'browser notification', 'desktop notification', 'permission'], tab: 'notifications', breadcrumb: tabLabel('notifications') },
+    // Shortcuts (desktop only)
+    { label: tabLabel('shortcuts'), keywords: ['shortcut', 'keyboard', 'hotkey', 'keybind', 'key binding', 'compose shortcut', 'reply shortcut'], tab: 'shortcuts', mobileHidden: true, breadcrumb: tabLabel('shortcuts') },
+    // Admin-only
+    { label: t('admin.systemEmail.tabUsers'), keywords: ['user', 'invite', 'admin', 'role', 'manage users', 'add user'], tab: 'users', adminOnly: true, breadcrumb: tabLabel('users') },
+    { label: t('admin.systemEmail.tabEmail'), keywords: ['system email', 'smtp', 'admin email', 'invite email', 'outgoing email'], tab: 'users', adminOnly: true, breadcrumb: tabLabel('users') },
+    { label: t('admin.sso.title'), keywords: ['sso', 'oidc', 'single sign on', 'oauth', 'provider', 'identity provider'], tab: 'sso', adminOnly: true, breadcrumb: tabLabel('sso') },
+  ];
+}
 
 function SearchResultsView({ results, query, onNavigate, t }) {
   if (results.length === 0) {
@@ -5804,6 +5811,8 @@ export default function AdminPanel() {
   const [searchQuery, setSearchQuery] = useState('');
   const [pendingSubTab, setPendingSubTab] = useState(null);
 
+  const searchIndex = useMemo(() => makeSearchIndex(t), [t]);
+
   const navigateTo = (tab, subtab) => {
     setSearchQuery('');
     setAdminTab(tab);
@@ -5814,7 +5823,7 @@ export default function AdminPanel() {
     setAdminTab(tabId);
   };
   const searchResults = searchQuery.trim()
-    ? SEARCH_INDEX.filter(item => {
+    ? searchIndex.filter(item => {
         if (item.adminOnly && !user?.isAdmin) return false;
         if (item.mobileHidden && isMobile) return false;
         const q = searchQuery.toLowerCase();
@@ -5977,14 +5986,6 @@ export default function AdminPanel() {
           background: 'var(--bg-primary)', padding: '20px 10px',
           display: 'flex', flexDirection: 'column', flexShrink: 0,
         }}>
-          <div style={{
-            fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 600,
-            letterSpacing: '0.07em', textTransform: 'uppercase',
-            padding: '0 8px', marginBottom: 10,
-          }}>
-            {t('admin.title')}
-          </div>
-
           <div style={{ padding: '0 2px', marginBottom: 10 }}>
             {searchInput(true)}
           </div>

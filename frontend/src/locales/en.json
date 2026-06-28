@@ -930,7 +930,8 @@
     },
     "search": {
       "placeholder": "Search settings…",
-      "noResults": "No settings match “{{query}}”"
+      "noResults": "No settings match “{{query}}”",
+      "notificationSound": "Notification sound"
     }
   },
   "blockList": {
