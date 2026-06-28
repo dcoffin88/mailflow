@@ -92,7 +92,7 @@ function parseChips(val) {
 
 export default function ComposeModal() {
   const { t } = useTranslation();
-  const { closeCompose, composeData, accounts, addNotification, setSelectedAccount, plaintextEmail } = useStore();
+  const { closeCompose, composeData, accounts, addNotification, setSelectedAccount, plaintextEmail, setThreadMessages } = useStore();
   const isMobile = useMobile();
 
   const isReply = !!(composeData?.isReply || composeData?.isReplyAll);
@@ -592,6 +592,7 @@ export default function ComposeModal() {
           forwardedAttachments: fwdAttachments.map(a => ({ messageId: a.messageId, part: a.part })),
         } : {}),
       });
+      const replyThreadId = isReply ? composeData?.threadId : null;
       closeCompose();
       if (draftUid != null && draftFolder != null && draftAccountId) {
         api.deleteDraft(draftAccountId, draftUid, draftFolder).catch(() => {});
@@ -603,6 +604,16 @@ export default function ComposeModal() {
         onAction: () => setSelectedAccount(accountId, sentFolder),
         actionLabel: t('compose.sent.action'),
       });
+      if (replyThreadId) {
+        const refreshThread = async () => {
+          try {
+            const data = await api.getThread(replyThreadId);
+            if (data.messages?.length) setThreadMessages(replyThreadId, data.messages);
+          } catch (_) {}
+        };
+        setTimeout(refreshThread, 3000);
+        setTimeout(refreshThread, 10000);
+      }
     } catch (err) {
       setError(err.message);
       setSending(false);

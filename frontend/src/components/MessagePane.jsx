@@ -586,6 +586,7 @@ export default function MessagePane() {
       isReplyAll: replyAll,
       originalFrom: sender,
       allRecipients,
+      threadId: message.thread_id,
     });
   };
 

@@ -118,8 +118,6 @@ router.get('/thread/:threadId', async (req, res) => {
   const { threadId } = req.params;
   if (!threadId) return res.status(400).json({ error: 'threadId required' });
 
-  const { folder } = req.query;
-
   try {
     const accountsResult = await query(
       'SELECT id FROM email_accounts WHERE user_id = $1 AND enabled = true',
@@ -128,13 +126,10 @@ router.get('/thread/:threadId', async (req, res) => {
     const userAccountIds = accountsResult.rows.map(r => r.id);
     if (!userAccountIds.length) return res.json({ messages: [] });
 
-    // Only restrict expansion to INBOX when viewing the INBOX — ensures the expansion
-    // matches what the list shows. For All Mail and any other folder show all messages
-    // regardless of which folder they were synced under (All Mail backfill is skipped so
-    // not every message has a [Gmail]/All Mail row in the DB).
-    const folderFilter = (folder === 'INBOX') ? `AND m.folder = $3` : '';
-    const params = (folder === 'INBOX') ? [userAccountIds, threadId, folder] : [userAccountIds, threadId];
-
+    // Show all non-deleted messages in the thread regardless of folder. This includes
+    // Sent replies (which have distinct message_ids) alongside received messages.
+    // DISTINCT ON (m.message_id) deduplicates the same message appearing in multiple
+    // folders (e.g. Gmail's All Mail), preferring the INBOX copy.
     const result = await query(`
       WITH deduped AS (
         SELECT DISTINCT ON (m.message_id)
@@ -149,13 +144,12 @@ router.get('/thread/:threadId', async (req, res) => {
         WHERE m.is_deleted = false
           AND m.account_id = ANY($1)
           AND m.thread_key = $2
-          ${folderFilter}
         ORDER BY m.message_id,
                  CASE WHEN m.folder = 'INBOX' THEN 0 ELSE 1 END,
                  m.date ASC
       )
       SELECT * FROM deduped ORDER BY date ASC
-    `, params);
+    `, [userAccountIds, threadId]);
 
     res.json({ messages: result.rows });
   } catch (err) {
