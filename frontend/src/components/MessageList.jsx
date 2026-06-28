@@ -2715,6 +2715,11 @@ export default function MessageList() {
                 swipeRightAction={swipeRightAction}
                 onSwipeLeft={selectionMode || swipeLeftAction === 'disabled' ? undefined : (msg) => runSwipeAction(swipeLeftAction, msg)}
                 onSwipeRight={selectionMode || swipeRightAction === 'disabled' ? undefined : (msg) => runSwipeAction(swipeRightAction, msg)}
+                isChecked={selectedIds.has(message.id)}
+                selectionMode={selectionMode}
+                onToggleSelect={handleRowToggleSelect}
+                onRangeSelect={handleRangeSelect}
+                onLongPress={isMobile ? (id) => { setSelectionModeActive(true); toggleSelect(id); } : undefined}
               />
             );
           })
@@ -3142,21 +3147,24 @@ function EmptyState({ folderSyncing, searchQuery, unreadOnly, selectedFolder, ac
   );
 }
 
-function ThreadRow({ message, isExpanded, threadMsgs, isLoadingThread, selectedMessageId, lastViewedMessageId, showAccount, isNarrow, onThreadClick, onSelect, onMarkRead, onStar, onDelete, hoverQuickActions, onContextMenu, onMove, isMobile, swipeLeftAction, swipeRightAction, onSwipeLeft, onSwipeRight }) {
+function ThreadRow({ message, isExpanded, threadMsgs, isLoadingThread, selectedMessageId, lastViewedMessageId, showAccount, isNarrow, onThreadClick, onSelect, onMarkRead, onStar, onDelete, hoverQuickActions, onContextMenu, onMove, isMobile, swipeLeftAction, swipeRightAction, onSwipeLeft, onSwipeRight, isChecked, selectionMode, onToggleSelect, onRangeSelect, onLongPress }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
   const messageCount = message.message_count || 1;
   const unreadCount  = parseInt(message.unread_count) || 0;
 
   const { contentRef, swipeBgLeftRef, swipeBgRightRef } = useSwipeRow({
-    isMobile, message, onSwipeLeft, onSwipeRight,
+    isMobile, message, onSwipeLeft, onSwipeRight, onLongPress,
   });
 
+  const hasAvatar = !isNarrow && !isMobile;
+  const avatarAsCheckbox = hasAvatar && selectionMode;
   const isLastViewed = lastViewedMessageId === message.id
     || (lastViewedMessageId && threadMsgs?.some(m => m.id === lastViewedMessageId));
-  const rowBg = isMobile
-    ? 'var(--bg-primary)'
-    : (isExpanded ? 'var(--bg-secondary)' : (hovered ? 'var(--bg-tertiary)' : (isLastViewed ? 'var(--accent-glow)' : 'transparent')));
+  const bgDefault = isMobile ? 'var(--bg-primary)' : 'transparent';
+  const rowBg = isChecked
+    ? 'var(--accent-dim)'
+    : (isExpanded ? 'var(--bg-secondary)' : (hovered ? 'var(--bg-tertiary)' : (isLastViewed ? 'var(--accent-glow)' : bgDefault)));
   const leftActionView = getSwipeActionView(swipeRightAction, message, t, unreadCount);
   const rightActionView = getSwipeActionView(swipeLeftAction, message, t, unreadCount);
 
@@ -3173,7 +3181,10 @@ function ThreadRow({ message, isExpanded, threadMsgs, isLoadingThread, selectedM
         ref={isMobile ? contentRef : undefined}
         onMouseEnter={() => !isMobile && setHovered(true)}
         onMouseLeave={() => !isMobile && setHovered(false)}
-        onClick={onThreadClick}
+        onClick={selectionMode ? (e) => {
+          if (e.shiftKey && onRangeSelect) { onRangeSelect(message.id); }
+          else { onToggleSelect(message.id); }
+        } : onThreadClick}
         onContextMenu={!isMobile ? (e => onContextMenu(e, message)) : undefined}
         style={{
           display: 'flex', alignItems: 'flex-start', gap: 10,
@@ -3183,27 +3194,75 @@ function ThreadRow({ message, isExpanded, threadMsgs, isLoadingThread, selectedM
           willChange: isMobile ? 'transform' : undefined,
         }}
       >
-        {/* Unread dot */}
-        {unreadCount > 0 && (
-          <div style={{
-            position: 'absolute', left: 3, top: '50%', transform: 'translateY(-50%)',
-            width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)',
-          }} />
+        {/* Left indicator: checkbox in selection mode (narrow/mobile), unread dot otherwise */}
+        {!hasAvatar ? (
+          selectionMode ? (
+            <div style={{
+              position: 'absolute', left: 4, top: '50%', transform: 'translateY(-50%)',
+              display: 'flex', alignItems: 'center',
+            }}>
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={() => {}}
+                onClick={e => { e.stopPropagation(); onToggleSelect(message.id); }}
+                style={{ cursor: 'pointer', width: 14, height: 14, accentColor: 'var(--accent)' }}
+              />
+            </div>
+          ) : (
+            unreadCount > 0 && (
+              <div style={{
+                position: 'absolute', left: 3, top: '50%', transform: 'translateY(-50%)',
+                width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)',
+              }} />
+            )
+          )
+        ) : (
+          !selectionMode && unreadCount > 0 && (
+            <div style={{
+              position: 'absolute', left: 3, top: '50%', transform: 'translateY(-50%)',
+              width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)',
+            }} />
+          )
         )}
 
-        {/* Avatar */}
+        {/* Avatar — morphs into a checkbox when in selection mode */}
         {!isNarrow && !isMobile && (
-          <div style={{
-            width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-            background: senderColor(message.from_email || message.from_name),
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 13, fontWeight: 600, color: 'white', marginTop: 1,
-          }}>
-            {(message.from_name || message.from_email || '?')[0].toUpperCase()}
+          <div
+            onClick={selectionMode ? e => { e.stopPropagation(); onToggleSelect(message.id); } : undefined}
+            style={{
+              width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
+              background: avatarAsCheckbox
+                ? (isChecked ? 'var(--accent)' : 'var(--bg-tertiary)')
+                : senderColor(message.from_email || message.from_name),
+              border: avatarAsCheckbox && !isChecked ? '2px solid var(--border)' : 'none',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 13, fontWeight: 600,
+              color: avatarAsCheckbox ? (isChecked ? 'white' : 'var(--text-tertiary)') : 'white',
+              marginTop: 1,
+              cursor: selectionMode ? 'pointer' : 'default',
+              transition: 'background 0.12s, border 0.12s',
+              userSelect: 'none',
+              boxSizing: 'border-box',
+            }}
+          >
+            {avatarAsCheckbox ? (
+              isChecked ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2.5">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              )
+            ) : (
+              (message.from_name || message.from_email || '?')[0].toUpperCase()
+            )}
           </div>
         )}
 
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ paddingLeft: (!hasAvatar && selectionMode) ? 22 : 0, flex: 1, minWidth: 0 }}>
           {/* Row 1: sender + badge + date */}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
@@ -3335,7 +3394,7 @@ function ThreadRow({ message, isExpanded, threadMsgs, isLoadingThread, selectedM
           ) : (threadMsgs || []).map((msg, idx) => (
             <div
               key={msg.id}
-              onClick={e => { e.stopPropagation(); onSelect(msg); }}
+              onClick={e => { e.stopPropagation(); if (!selectionMode) onSelect(msg); }}
               onContextMenu={!isMobile ? (e => { e.preventDefault(); onContextMenu(e, msg); }) : undefined}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 8,
