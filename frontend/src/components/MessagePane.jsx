@@ -8,10 +8,20 @@ import { getEffectiveShortcuts, parseModKey, modCompactLabel } from '../utils/de
 import { useMobile } from '../hooks/useMobile.js';
 import { clearDeleteGuard, clearPendingDelete, setCompletedDelete, setPendingDelete } from '../utils/pendingDeletes.js';
 import { pendingMarkReadMap, completedMarkReadMap, setPending } from '../utils/pendingReads.js';
-import { prepareEmailHtml } from '../utils/scopeEmailCss.js';
-import { injectEmailStyles, removeEmailStyles } from '../utils/emailStyleRegistry.js';
-
 const USE_DIV_RENDER = import.meta.env.VITE_EMAIL_DIV_RENDER === 'true';
+
+// Lazy-load the div-renderer utilities so PostCSS is excluded from the flag-off
+// bundle. Rollup treats the import() calls inside this block as dead code when
+// USE_DIV_RENDER compiles to false, stripping PostCSS and both utility modules.
+// In the flag-on build they live in the same chunk, so the dynamic imports
+// resolve synchronously — no perceptible delay before first render.
+let prepareEmailHtml  = null;
+let injectEmailStyles = null;
+let removeEmailStyles = null;
+if (USE_DIV_RENDER) {
+  ({ prepareEmailHtml }                    = await import('../utils/scopeEmailCss.js'));
+  ({ injectEmailStyles, removeEmailStyles } = await import('../utils/emailStyleRegistry.js'));
+}
 import { senderColor } from '../themes.js';
 import MessageHeaderModal from './MessageHeaderModal.jsx';
 import FolderIcon from './FolderIcon.jsx';
