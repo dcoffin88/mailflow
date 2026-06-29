@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '../store/index.js';
 import { api } from '../utils/api.js';
@@ -8,6 +8,10 @@ import { getEffectiveShortcuts, parseModKey, modCompactLabel } from '../utils/de
 import { useMobile } from '../hooks/useMobile.js';
 import { clearDeleteGuard, clearPendingDelete, setCompletedDelete, setPendingDelete } from '../utils/pendingDeletes.js';
 import { pendingMarkReadMap, completedMarkReadMap, setPending } from '../utils/pendingReads.js';
+import { prepareEmailHtml } from '../utils/scopeEmailCss.js';
+import { injectEmailStyles, removeEmailStyles } from '../utils/emailStyleRegistry.js';
+
+const USE_DIV_RENDER = import.meta.env.VITE_EMAIL_DIV_RENDER === 'true';
 import { senderColor } from '../themes.js';
 import MessageHeaderModal from './MessageHeaderModal.jsx';
 import FolderIcon from './FolderIcon.jsx';
@@ -144,6 +148,15 @@ export default function MessagePane() {
   const scrollContainerRef = useRef(null);
   const iframeRef = useRef(null);
   const roRef = useRef(null);
+  // useMemo so prepared is available in the same render as body.html — no extra frame,
+  // no flash of empty content between skeleton-gone and email-shown.
+  const prepared = useMemo(() => {
+    if (!USE_DIV_RENDER || !body?.html) return null;
+    return prepareEmailHtml(body.html, String(message?.id ?? 'preview'));
+  }, [body?.html, message?.id]);
+  const outerRef = useRef(null);
+  const scaleRef = useRef(null);
+  const innerRef = useRef(null);
   const bodyCache = useRef({}); // messageId -> body, so revisiting is instant (capped at 50)
   const bodyCacheOrder = useRef([]); // insertion-order keys for LRU eviction
   // Session-scoped set of message IDs where the user has clicked "Load images once"
@@ -400,6 +413,83 @@ export default function MessagePane() {
       emailScaleRef.current = 1;
     };
   }, [body?.html, selectedMessageId]);
+
+  // Inject scoped email styles before paint so there is no flash of unstyled content.
+  // useLayoutEffect runs synchronously after DOM mutations and before the browser paints,
+  // so the <style> tag is in <head> before the email div becomes visible.
+  useLayoutEffect(() => {
+    if (!prepared) return;
+    injectEmailStyles(prepared.prefix, prepared.styleBlocks);
+    return () => removeEmailStyles(prepared.prefix);
+  }, [prepared]);
+
+  // Div render path — scale-to-fit for wide fixed-layout emails.
+  // Uses outer/inner refs: measures inner (natural dimensions, unaffected by transform),
+  // sets height/overflow on outer (not observed by the ResizeObserver, preventing loops).
+  useEffect(() => {
+    if (!USE_DIV_RENDER || !prepared) return;
+
+    let rafId = null;
+
+    const applyScale = () => {
+      const inner  = innerRef.current;
+      const outer  = outerRef.current;
+      const scaler = scaleRef.current;
+      if (!inner || !outer || !scaler) return;
+
+      // Reset first so we measure natural/unscaled dimensions.
+      // Transform goes on scaleRef (not innerRef) so the base normalize's
+      // transform:none!important on .email-* never cancels the scale.
+      scaler.style.transform       = '';
+      scaler.style.transformOrigin = '';
+      outer.style.height    = '';
+      outer.style.overflowX = '';
+
+      const containerW = outer.clientWidth;
+      const contentW   = inner.scrollWidth; // unaffected by ancestor transforms
+
+      if (containerW > 0 && contentW > containerW + 2) {
+        const scale = containerW / contentW;
+        scaler.style.transform       = `scale(${scale})`;
+        scaler.style.transformOrigin = 'top left';
+        outer.style.height           = Math.round(inner.scrollHeight * scale) + 'px';
+        // Transform does not change layout width; hide the scrollbar in scaled mode.
+        outer.style.overflowX        = 'hidden';
+      }
+    };
+
+    const scheduleScale = () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => { rafId = null; applyScale(); });
+    };
+
+    // Store image listeners so we can remove them if the message changes mid-load.
+    const imageListeners = [];
+    innerRef.current?.querySelectorAll('img').forEach(img => {
+      if (!img.complete) {
+        const handler = () => scheduleScale();
+        img.addEventListener('load', handler, { once: true });
+        imageListeners.push({ img, handler });
+      }
+    });
+
+    // Watch inner for content reflow (web fonts, dynamic content).
+    // Do NOT observe outer — we set outer.style.height ourselves, which would
+    // immediately re-fire the observer and produce a measurement loop.
+    let ro;
+    if (window.ResizeObserver && innerRef.current) {
+      ro = new ResizeObserver(scheduleScale);
+      ro.observe(innerRef.current);
+    }
+
+    scheduleScale();
+
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      if (ro) ro.disconnect();
+      imageListeners.forEach(({ img, handler }) => img.removeEventListener('load', handler));
+    };
+  }, [prepared]);
 
   // Fade in pane content when switching messages on desktop
   useEffect(() => {
@@ -751,6 +841,19 @@ ${bodyContent}
       setMovePickerLoading(false);
     }
   }, [showMovePicker, message?.account_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleEmailClick = useCallback((ev) => {
+    const anchor = ev.target.closest('a[href]');
+    if (!anchor) return;
+    ev.preventDefault();
+    let raw = anchor.getAttribute('href') || '';
+    if (raw.startsWith('//')) raw = 'https:' + raw;
+    if (/^https?:\/\//i.test(raw)) {
+      window.open(raw, '_blank', 'noopener,noreferrer');
+    } else if (/^mailto:/i.test(raw)) {
+      window.open(raw);
+    }
+  }, []);
 
   const handleMoveToFolder = useCallback((folder) => {
     if (!message) return;
@@ -1657,10 +1760,38 @@ ${bodyContent}
             borderRadius: isMobile ? 0 : 10,
             border: isMobile ? 'none' : '1px solid var(--border-subtle)',
             overflow: 'hidden',
+            // contain:layout establishes a containing block for any position:fixed
+            // descendants (including the inner email div if email CSS repositions it).
+            contain: 'layout',
           }}>
-            <iframe
-              ref={iframeRef}
-              srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8">
+            {USE_DIV_RENDER ? (
+              // Three-layer structure keeps concerns separate:
+              // Outer  — click interception, height/overflow for scale-to-fit,
+              //          position:relative + parent contain:layout contain hostile CSS.
+              // Scale  — receives the CSS transform for scale-to-fit; carries no
+              //          email CSS class so transform:none!important on .email-*
+              //          never cancels the scale.
+              // Inner  — scoped email CSS root (.email-* class + data attribute);
+              //          transform:none!important here neutralises hostile body CSS
+              //          without touching the scale wrapper above it.
+              <div
+                ref={outerRef}
+                style={{ position: 'relative', width: '100%' }}
+                onClick={handleEmailClick}
+              >
+                <div ref={scaleRef}>
+                  <div
+                    ref={innerRef}
+                    data-mailflow-email={prepared?.prefix}
+                    className={prepared?.prefix ?? ''}
+                    dangerouslySetInnerHTML={prepared ? { __html: prepared.html } : undefined}
+                  />
+                </div>
+              </div>
+            ) : (
+              <iframe
+                ref={iframeRef}
+                srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8">
                 <meta name="viewport" content="width=device-width,initial-scale=1">
                 <meta name="color-scheme" content="only light">
                 <meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; style-src 'unsafe-inline';">
@@ -1690,16 +1821,18 @@ ${bodyContent}
                      grid systems (e.g. Oracle Eloqua "tolkien") set min-width on inline-table
                      column elements as a layout fallback when their calc() width resolves to 0. */
                   td, th { min-width: 0 !important; }
-                  td, th { word-break: break-word; }
+                  td { word-break: break-word; }
+                  th { overflow-wrap: normal; word-break: normal; }
                   a { color: #6366f1; }
                   pre, code { overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
                   blockquote { border-left: 3px solid #ddd; margin: 0; padding-left: 12px; color: #555; }
                 </style></body></html>`}
-              scrolling="no"
-              style={{ width: '1px', minWidth: '100%', border: 'none', display: 'block', height: '300px' }}
-              sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-              title={t('message.emailFrameTitle')}
-            />
+                scrolling="no"
+                style={{ width: '1px', minWidth: '100%', border: 'none', display: 'block', height: '300px' }}
+                sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                title={t('message.emailFrameTitle')}
+              />
+            )}
           </div>
         </div>
       )}
