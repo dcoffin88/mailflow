@@ -73,6 +73,7 @@ export const useStore = create((set, get) => ({
     messagesRefreshToken: state.messagesRefreshToken + 1,
     expandedThreadId: null,
     threadMessages: {},
+    showContacts: false,
   }));
   },
 
