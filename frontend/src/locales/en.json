@@ -349,6 +349,8 @@
     },
     "createRule": "Create rule from message",
     "addToBlockList": "Add to block list",
+    "markAsSpam": "Mark as Spam",
+    "markAsHam": "Mark as Not Spam",
     "copySubject": "Copy subject",
     "copySender": "Copy sender's address",
     "viewHeaders": "View full headers",
@@ -994,6 +996,17 @@
   "blockList": {
     "blocked": "Blocked",
     "errorAdd": "Failed to block sender"
+  },
+  "spam": {
+    "movedToSpam": "Moved to Spam",
+    "movedToSpamBulk": "Moved {{count}} messages to Spam",
+    "movedToInbox": "Moved to Inbox",
+    "movedToInboxBulk": "Moved {{count}} messages to Inbox",
+    "failTitle": "Could not mark as spam",
+    "failHamTitle": "Could not mark as not spam",
+    "failBody": "The mail server rejected the move.",
+    "failHamBody": "The mail server rejected the move.",
+    "failBodyBulk": "{{count}} messages could not be moved."
   },
   "contacts": {
     "title": "Contacts",

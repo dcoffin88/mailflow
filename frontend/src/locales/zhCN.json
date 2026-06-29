@@ -349,6 +349,8 @@
     },
     "createRule": "根据此邮件创建规则",
     "addToBlockList": "添加到黑名单",
+    "markAsSpam": "标记为垃圾邮件",
+    "markAsHam": "标记为非垃圾邮件",
     "copySubject": "复制主题",
     "copySender": "复制发件人地址",
     "viewHeaders": "查看完整邮件头",
@@ -994,6 +996,17 @@
   "blockList": {
     "blocked": "已屏蔽",
     "errorAdd": "屏蔽发件人失败"
+  },
+  "spam": {
+    "movedToSpam": "已移至垃圾邮件",
+    "movedToSpamBulk": "已移至垃圾邮件 {{count}} 封",
+    "movedToInbox": "已移至收件箱",
+    "movedToInboxBulk": "已移至收件箱 {{count}} 封",
+    "failTitle": "标记为垃圾邮件失败",
+    "failHamTitle": "标记为非垃圾邮件失败",
+    "failBody": "邮件服务器拒绝了移动操作。",
+    "failHamBody": "邮件服务器拒绝了移动操作。",
+    "failBodyBulk": "{{count}} 封邮件无法移动。"
   },
   "contacts": {
     "title": "联系人",
