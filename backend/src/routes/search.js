@@ -191,19 +191,24 @@ router.get('/contacts', searchLimiter, async (req, res) => {
           AND (email ILIKE $2 OR name ILIKE $2)
       ),
       inbound AS (
-        SELECT DISTINCT ON (from_email)
-          from_email AS email,
-          from_name  AS name,
-          0          AS send_count,
-          date       AS last_sent
-        FROM messages
-        WHERE account_id = ANY($3)
-          AND is_deleted = false
-          AND from_email IS NOT NULL AND from_email != ''
-          AND (from_email ILIKE $2 OR from_name ILIKE $2)
-          AND lower(from_email) NOT IN (SELECT lower(email) FROM sent)
-          AND from_email !~* '^(noreply|no-reply|donotreply|mailer-daemon|notifications?|bounce[^@]*)@'
-        ORDER BY from_email, date DESC
+        SELECT email, name, send_count, last_sent
+        FROM (
+          SELECT DISTINCT ON (from_email)
+            from_email AS email,
+            from_name  AS name,
+            0          AS send_count,
+            date       AS last_sent,
+            is_bulk
+          FROM messages
+          WHERE account_id = ANY($3)
+            AND is_deleted = false
+            AND from_email IS NOT NULL AND from_email != ''
+            AND (from_email ILIKE $2 OR from_name ILIKE $2)
+            AND lower(from_email) NOT IN (SELECT lower(email) FROM sent)
+            AND from_email !~* '^(noreply|no-reply|donotreply|mailer-daemon|notifications?|bounce[^@]*)@'
+          ORDER BY from_email, date DESC
+        ) latest
+        WHERE is_bulk IS NOT TRUE
       )
       SELECT email, name
       FROM (

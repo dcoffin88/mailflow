@@ -887,14 +887,14 @@ router.post('/messages/bulk-delete', async (req, res) => {
             from_name, from_email, to_addresses, cc_addresses,
             reply_to, in_reply_to, date, snippet, is_read, is_starred,
             has_attachments, flags, body_html, body_text, attachments,
-            thread_references, thread_id
+            thread_references, thread_id, is_bulk
           )
           SELECT
             d.account_id, u.new_uid, $4, d.message_id, d.subject,
             d.from_name, d.from_email, d.to_addresses, d.cc_addresses,
             d.reply_to, d.in_reply_to, d.date, d.snippet, d.is_read, d.is_starred,
             d.has_attachments, d.flags, d.body_html, d.body_text, d.attachments,
-            d.thread_references, d.thread_id
+            d.thread_references, d.thread_id, d.is_bulk
           FROM deleted d
           JOIN uid_map u ON d.id = u.src_id
           ON CONFLICT (account_id, uid, folder) DO NOTHING
@@ -1033,14 +1033,14 @@ router.post('/messages/bulk-move', async (req, res) => {
           from_name, from_email, to_addresses, cc_addresses,
           reply_to, in_reply_to, date, snippet, is_read, is_starred,
           has_attachments, flags, body_html, body_text, attachments,
-          thread_references, thread_id
+          thread_references, thread_id, is_bulk
         )
         SELECT
           d.account_id, u.new_uid, $4, d.message_id, d.subject,
           d.from_name, d.from_email, d.to_addresses, d.cc_addresses,
           d.reply_to, d.in_reply_to, d.date, d.snippet, d.is_read, d.is_starred,
           d.has_attachments, d.flags, d.body_html, d.body_text, d.attachments,
-          d.thread_references, d.thread_id
+          d.thread_references, d.thread_id, d.is_bulk
         FROM deleted d
         JOIN uid_map u ON d.id = u.src_id
         ON CONFLICT (account_id, uid, folder) DO NOTHING
@@ -1150,14 +1150,14 @@ router.post('/messages/bulk-archive', async (req, res) => {
           from_name, from_email, to_addresses, cc_addresses,
           reply_to, in_reply_to, date, snippet, is_read, is_starred,
           has_attachments, flags, body_html, body_text, attachments,
-          thread_references, thread_id
+          thread_references, thread_id, is_bulk
         )
         SELECT
           d.account_id, u.new_uid, $4, d.message_id, d.subject,
           d.from_name, d.from_email, d.to_addresses, d.cc_addresses,
           d.reply_to, d.in_reply_to, d.date, d.snippet, d.is_read, d.is_starred,
           d.has_attachments, d.flags, d.body_html, d.body_text, d.attachments,
-          d.thread_references, d.thread_id
+          d.thread_references, d.thread_id, d.is_bulk
         FROM deleted d
         JOIN uid_map u ON d.id = u.src_id
         ON CONFLICT (account_id, uid, folder) DO NOTHING

@@ -1,6 +1,6 @@
 import { ImapFlow } from 'imapflow';
 import { query } from './db.js';
-import { parseMessage, snippetFromBody } from './messageParser.js';
+import { parseMessage, snippetFromBody, detectBulkFromParsedHeaders, parseRawHeaders } from './messageParser.js';
 import { refreshMicrosoftToken } from '../routes/oauth.js';
 import { sanitizeEmail } from './emailSanitizer.js';
 import { logger } from './logger.js';
@@ -1175,8 +1175,8 @@ export class ImapManager {
                 reply_to, in_reply_to,
                 date, snippet, is_read, is_starred, has_attachments, flags,
                 body_html, body_text, attachments,
-                thread_references, thread_id
-              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+                thread_references, thread_id, is_bulk
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
               ON CONFLICT (account_id, uid, folder) DO UPDATE
               SET from_name = $6, from_email = $7,
                   to_addresses = $8, cc_addresses = $9,
@@ -1201,7 +1201,8 @@ export class ImapManager {
                   body_text = COALESCE(messages.body_text, EXCLUDED.body_text),
                   attachments = COALESCE(messages.attachments::text, EXCLUDED.attachments::text)::jsonb,
                   thread_references = COALESCE(messages.thread_references, EXCLUDED.thread_references),
-                  thread_id = COALESCE(messages.thread_id, EXCLUDED.thread_id)
+                  thread_id = COALESCE(messages.thread_id, EXCLUDED.thread_id),
+                  is_bulk = COALESCE(messages.is_bulk, EXCLUDED.is_bulk)
               RETURNING id, (xmax = 0) as is_new
             `, [
               account.id, parsed.uid, folder,
@@ -1213,7 +1214,7 @@ export class ImapManager {
               parsed.isRead, parsed.isStarred,
               parsed.hasAttachments, JSON.stringify(parsed.flags),
               sanitizeStr(safeHtml), sanitizeStr(text), JSON.stringify(atts || []),
-              refs, threadId,
+              refs, threadId, parsed.isBulk ?? null,
             ]);
             if (result.rows[0]?.is_new && !parsed.isRead) {
               newMessages.push({ ...parsed, id: result.rows[0].id, accountId: account.id, folder });
@@ -1603,8 +1604,8 @@ export class ImapManager {
                     reply_to, in_reply_to,
                     date, snippet, is_read, is_starred, has_attachments, flags,
                     body_html, body_text, attachments,
-                    thread_references, thread_id
-                  ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+                    thread_references, thread_id, is_bulk
+                  ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
                   ON CONFLICT (account_id, uid, folder) DO UPDATE
                   SET from_name = $6, from_email = $7,
                       to_addresses = $8, cc_addresses = $9,
@@ -1629,7 +1630,8 @@ export class ImapManager {
                       body_text = COALESCE(messages.body_text, EXCLUDED.body_text),
                       attachments = COALESCE(messages.attachments::text, EXCLUDED.attachments::text)::jsonb,
                       thread_references = COALESCE(messages.thread_references, EXCLUDED.thread_references),
-                      thread_id = COALESCE(messages.thread_id, EXCLUDED.thread_id)
+                      thread_id = COALESCE(messages.thread_id, EXCLUDED.thread_id),
+                      is_bulk = COALESCE(messages.is_bulk, EXCLUDED.is_bulk)
                 `, [
                   account.id, parsed.uid, folder,
                   bfMsgId, sanitizeStr(parsed.subject),
@@ -1640,7 +1642,7 @@ export class ImapManager {
                   parsed.isRead, parsed.isStarred,
                   parsed.hasAttachments, JSON.stringify(parsed.flags),
                   sanitizeStr(safeHtml), sanitizeStr(bodyText), JSON.stringify(atts || []),
-                  bfRefs, bfThreadId,
+                  bfRefs, bfThreadId, parsed.isBulk ?? null,
                 ]);
                 if (bfThreadId && bfThreadId !== bfMsgId) {
                   await query(
@@ -1715,6 +1717,76 @@ export class ImapManager {
     }
   }
 
+  // Fetch headers-only from IMAP for messages that have is_bulk IS NULL and update them.
+  // Called at the end of backfillAllFolders so a manual reindex evaluates existing mail.
+  async refreshBulkFlags(account) {
+    const nullResult = await query(
+      `SELECT id, uid, folder FROM messages
+       WHERE account_id = $1 AND is_bulk IS NULL AND is_deleted = false
+       ORDER BY folder, uid DESC
+       LIMIT 5000`,
+      [account.id]
+    );
+    if (nullResult.rows.length === 0) return;
+
+    const byFolder = new Map();
+    for (const { id, uid, folder } of nullResult.rows) {
+      if (!byFolder.has(folder)) byFolder.set(folder, []);
+      byFolder.get(folder).push({ id, uid: Number(uid) });
+    }
+
+    console.log(`Bulk flag refresh: ${nullResult.rows.length} unevaluated messages for ${logAccount(account)}`);
+
+    for (const [folder, msgs] of byFolder) {
+      let client = null;
+      try {
+        const row = (await query('SELECT * FROM email_accounts WHERE id = $1', [account.id])).rows[0];
+        if (!row) return;
+        const fresh = await ensureFreshToken(row);
+        const { resolved, policy } = await resolveAccountHost(fresh);
+        client = new ImapFlow(makeClientCfg(fresh, resolved, { policy }));
+        client.on('error', () => {});
+        await Promise.race([
+          client.connect(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('IMAP timeout (30s)')), 30000)),
+        ]);
+
+        const uidToId = new Map(msgs.map(m => [m.uid, m.id]));
+        const updates = [];
+
+        const lock = await client.getMailboxLock(folder);
+        try {
+          const uidSet = msgs.map(m => m.uid).join(',');
+          for await (const msg of client.fetch(uidSet, {
+            uid: true,
+            headers: ['list-unsubscribe', 'list-id', 'list-post', 'precedence'],
+          }, { uid: true })) {
+            const dbId = uidToId.get(msg.uid);
+            if (dbId == null) continue;
+            const h = parseRawHeaders(msg.headers);
+            updates.push({ id: dbId, isBulk: detectBulkFromParsedHeaders(h) });
+          }
+        } finally {
+          lock.release();
+        }
+
+        if (updates.length > 0) {
+          await query(
+            `UPDATE messages SET is_bulk = v.is_bulk
+             FROM (SELECT unnest($1::uuid[]) AS id, unnest($2::boolean[]) AS is_bulk) AS v
+             WHERE messages.id = v.id`,
+            [updates.map(u => u.id), updates.map(u => u.isBulk)]
+          );
+        }
+        console.log(`Bulk flag refresh: ${updates.length}/${msgs.length} updated in ${folder} for ${logAccount(account)}`);
+      } catch (err) {
+        console.warn(`Bulk flag refresh error for ${logAccount(account)}/${folder}: ${err.message}`);
+      } finally {
+        if (client) { try { await client.logout(); } catch { /* ignore */ } }
+      }
+    }
+  }
+
   // Runs backfillMessages for every folder: INBOX first, then all others sequentially.
   // Skips provider-specific duplicate-view folders (e.g. Gmail's All Mail, Starred, Important)
   // to avoid storing tens of thousands of duplicate message rows.
@@ -1742,6 +1814,11 @@ export class ImapManager {
           console.warn(`Backfill skipped ${logAccount(account)}/${path}: ${err.message}`)
         );
       }
+
+      // Update bulk flags for messages synced before this feature was added
+      await this.refreshBulkFlags(account).catch(err =>
+        console.warn(`Bulk flag refresh failed for ${logAccount(account)}:`, err.message)
+      );
     } finally {
       this.backfillAllRunning.delete(account.id);
       this.broadcast({ type: 'backfill_all_complete', accountId: account.id }, account.user_id);
@@ -1750,6 +1827,8 @@ export class ImapManager {
       );
     }
   }
+
+
 
   // Called by the body-fetch route whenever a user opens a message that required a live
   // IMAP fetch. The timestamp is used by background jobs to back off during active sessions.

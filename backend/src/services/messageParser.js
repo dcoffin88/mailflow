@@ -183,6 +183,13 @@ export function parseRawHeaders(buf) {
   return result;
 }
 
+export function detectBulkFromParsedHeaders(h) {
+  if (!h) return false;
+  if (h['list-unsubscribe'] || h['list-id'] || h['list-post']) return true;
+  const prec = (h['precedence'] || '').toLowerCase();
+  return prec === 'bulk' || prec === 'list';
+}
+
 export async function parseMessage(msg) {
   const envelope = msg.envelope || {};
   const flags = msg.flags ? [...msg.flags] : [];
@@ -254,6 +261,12 @@ export async function parseMessage(msg) {
     hasAttachments = detectAttachments(msg.bodyStructure);
   }
 
+  const parsedHeaders = msg.headers && Buffer.isBuffer(msg.headers) ? parseRawHeaders(msg.headers) : {};
+  const references = (() => {
+    if (msg.headers && typeof msg.headers.get === 'function') return msg.headers.get('references') || null;
+    return parsedHeaders['references'] || null;
+  })();
+
   return {
     uid: msg.uid,
     messageId: envelope.messageId || null,
@@ -264,21 +277,15 @@ export async function parseMessage(msg) {
     cc: mapAddrs(envelope.cc),
     replyTo: mapAddrs(envelope.replyTo),
     inReplyTo: envelope.inReplyTo || null,
-    references: (() => {
-      if (msg.headers && typeof msg.headers.get === 'function') return msg.headers.get('references') || null;
-      if (msg.headers && Buffer.isBuffer(msg.headers)) {
-        const parsed = parseRawHeaders(msg.headers);
-        return parsed['references'] || null;
-      }
-      return null;
-    })(),
-    parsedHeaders: msg.headers && Buffer.isBuffer(msg.headers) ? parseRawHeaders(msg.headers) : {},
+    references,
+    parsedHeaders,
     date: msg.internalDate || envelope.date || new Date(),
     snippet,
     isRead,
     isStarred,
     hasAttachments,
     flags,
+    isBulk: detectBulkFromParsedHeaders(parsedHeaders),
   };
 }
 
