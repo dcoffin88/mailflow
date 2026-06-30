@@ -94,8 +94,8 @@ router.delete('/disconnect', async (req, res) => {
 router.get('/projects', async (req, res) => {
   try {
     const token = await getTodoistToken(req.session.userId);
-    const projects = await todoistFetch(token, 'GET', '/projects');
-    res.json(projects);
+    const data = await todoistFetch(token, 'GET', '/projects');
+    res.json(data.results ?? data);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
@@ -105,8 +105,8 @@ router.get('/projects', async (req, res) => {
 router.get('/labels', async (req, res) => {
   try {
     const token = await getTodoistToken(req.session.userId);
-    const labels = await todoistFetch(token, 'GET', '/labels');
-    res.json(labels);
+    const data = await todoistFetch(token, 'GET', '/labels');
+    res.json(data.results ?? data);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
