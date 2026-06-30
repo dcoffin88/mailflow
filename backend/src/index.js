@@ -22,6 +22,7 @@ import oidcApiRouter, { oidcBrowserRouter } from './routes/oidc.js';
 import rulesRoutes from './routes/rules.js';
 import blockListRoutes from './routes/blockList.js';
 import contactsRoutes from './routes/contacts.js';
+import todoistRoutes from './routes/todoist.js';
 import carddavRouter from './routes/carddav.js';
 import { encryptExistingCredentials, query } from './services/db.js';
 import { runMigrations } from './services/migrations.js';
@@ -133,6 +134,7 @@ app.use('/api/totp', totpRoutes);
 app.use('/api/rules', rulesRoutes);
 app.use('/api/block-list', blockListRoutes);
 app.use('/api/contacts', contactsRoutes);
+app.use('/api/todoist', todoistRoutes);
 
 // CardDAV server — body is read lazily inside each handler via rawBody()
 app.use('/carddav', carddavRouter);

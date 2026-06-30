@@ -879,6 +879,8 @@
       "title": "Intégrations",
       "description": "Connectez des fournisseurs OAuth pour les comptes qui ne prennent pas en charge les mots de passe d'application",
       "loading": "Chargement…",
+      "tabEmailProviders": "Fournisseurs de messagerie",
+      "tabApps": "Applications",
       "microsoft": {
         "title": "Microsoft 365 / Outlook.com",
         "description": "OAuth2 pour les comptes Microsoft professionnels, scolaires ou personnels (Outlook.com, Hotmail)",
@@ -917,6 +919,18 @@
         "deviceCodeDeclined": "L'autorisation a été refusée.",
         "deviceCodeError": "Une erreur s'est produite. Veuillez réessayer.",
         "deviceCodeCancel": "Annuler"
+      },
+      "todoist": {
+        "title": "Todoist",
+        "description": "Intégration du gestionnaire de tâches personnel",
+        "connect": "Connecter",
+        "connecting": "Connexion...",
+        "disconnect": "Déconnecter",
+        "connected": "Connecté",
+        "notConnected": "Non connecté",
+        "tokenLabel": "Jeton d'API personnel",
+        "tokenPh": "Collez votre jeton d'API Todoist",
+        "help": "Trouvez votre jeton dans Todoist Paramètres → Intégrations → Développeur"
       }
     },
     "ssoLinked": {
@@ -983,5 +997,27 @@
       "home": "Domicile",
       "other": "Autre"
     }
+  },
+  "todoist": {
+    "betaLabel": "Bêta",
+    "title": "Créer une tâche Todoist",
+    "taskTitle": "Titre de la tâche",
+    "taskTitlePh": "Que faut-il faire ?",
+    "description": "Description",
+    "descriptionPh": "Notes optionnelles...",
+    "project": "Projet",
+    "inbox": "Boîte de réception",
+    "labels": "Étiquettes",
+    "priority": "Priorité",
+    "priorityUrgent": "Urgent",
+    "priorityHigh": "Haute",
+    "priorityMedium": "Moyenne",
+    "priorityNormal": "Sans priorité",
+    "dueDate": "Date d'échéance",
+    "dueDatePh": "ex. demain, lundi prochain",
+    "create": "Créer la tâche",
+    "creating": "Création...",
+    "taskCreated": "Tâche créée dans Todoist",
+    "openTask": "Ouvrir dans Todoist"
   }
 }

@@ -24,6 +24,14 @@ export const useStore = create((set, get) => ({
   setUser: (user) => set({ user }),
   updateUser: (updates) => set(state => ({ user: state.user ? { ...state.user, ...updates } : state.user })),
 
+  // Todoist integration status (persisted across page loads via localStorage)
+  todoistConnected: localStorage.getItem('mailflow_todoist_connected') === '1',
+  setTodoistConnected: (connected) => {
+    if (connected) localStorage.setItem('mailflow_todoist_connected', '1');
+    else localStorage.removeItem('mailflow_todoist_connected');
+    set({ todoistConnected: connected });
+  },
+
   // Lock screen
   isLocked: localStorage.getItem('mailflow_locked') === '1',
   setLocked: (locked) => {

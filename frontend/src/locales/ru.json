@@ -879,6 +879,8 @@
       "title": "Интеграции",
       "description": "Подключите OAuth-провайдеров для аккаунтов, которые не поддерживают пароли приложений",
       "loading": "Загрузка…",
+      "tabEmailProviders": "Почтовые провайдеры",
+      "tabApps": "Приложения",
       "microsoft": {
         "title": "Microsoft 365 / Outlook.com",
         "description": "OAuth2 для рабочих, учебных или личных аккаунтов Microsoft (Outlook.com, Hotmail)",
@@ -917,6 +919,18 @@
         "deviceCodeDeclined": "Авторизация была отклонена.",
         "deviceCodeError": "Произошла ошибка. Повторите попытку.",
         "deviceCodeCancel": "Отмена"
+      },
+      "todoist": {
+        "title": "Todoist",
+        "description": "Интеграция с персональным менеджером задач",
+        "connect": "Подключить",
+        "connecting": "Подключение...",
+        "disconnect": "Отключить",
+        "connected": "Подключено",
+        "notConnected": "Не подключено",
+        "tokenLabel": "Личный токен API",
+        "tokenPh": "Вставьте токен API Todoist",
+        "help": "Найдите токен в Todoist Настройки → Интеграции → Разработчик"
       }
     },
     "ssoLinked": {
@@ -983,5 +997,27 @@
       "home": "Дом",
       "other": "Другой"
     }
+  },
+  "todoist": {
+    "betaLabel": "Бета",
+    "title": "Создать задачу Todoist",
+    "taskTitle": "Название задачи",
+    "taskTitlePh": "Что нужно сделать?",
+    "description": "Описание",
+    "descriptionPh": "Необязательные заметки...",
+    "project": "Проект",
+    "inbox": "Входящие",
+    "labels": "Метки",
+    "priority": "Приоритет",
+    "priorityUrgent": "Срочно",
+    "priorityHigh": "Высокий",
+    "priorityMedium": "Средний",
+    "priorityNormal": "Без приоритета",
+    "dueDate": "Срок выполнения",
+    "dueDatePh": "напр. завтра, следующий понедельник",
+    "create": "Создать задачу",
+    "creating": "Создание...",
+    "taskCreated": "Задача создана в Todoist",
+    "openTask": "Открыть в Todoist"
   }
 }

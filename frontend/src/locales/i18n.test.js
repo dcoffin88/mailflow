@@ -265,6 +265,22 @@ const SAME_VALUE_ALLOWED = {
   'contacts.phoneTypes.home': [['es', 'it']],
   // "Mobile" — same spelling in English, French, and Italian
   'contacts.phoneTypes.mobile': [['en', 'fr', 'it']],
+
+  // ── Todoist integration ────────────────────────────────────────────────────
+  // "Todoist" — brand name, same in all locales
+  'admin.integrations.todoist.title': 'any',
+  // "Beta" — same spelling in de, en, es, it; fr uses "Bêta", ru uses "Бета", zh uses "测试版"
+  'todoist.betaLabel': [['de', 'en', 'es', 'it']],
+  // "Description" — same spelling in en and fr
+  'todoist.description': [['en', 'fr']],
+  // "Labels" — international loanword, same in de and en
+  'todoist.labels': [['de', 'en']],
+  // "Urgent" — same in en and fr; "Urgente" same in es and it (Romance languages)
+  'todoist.priorityUrgent': [['en', 'fr'], ['es', 'it']],
+  // "Alta" — "High" translates identically in es and it (Romance languages)
+  'todoist.priorityHigh': [['es', 'it']],
+  // "Media" — "Medium" translates identically in es and it (Romance languages)
+  'todoist.priorityMedium': [['es', 'it']],
 };
 
 // Keys referenced dynamically (via a variable passed to t()) that cannot be

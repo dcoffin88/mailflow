@@ -25,6 +25,7 @@ if (USE_DIV_RENDER) {
 import { senderColor } from '../themes.js';
 import MessageHeaderModal from './MessageHeaderModal.jsx';
 import FolderIcon from './FolderIcon.jsx';
+import TodoistTaskModal from './TodoistTaskModal.jsx';
 
 function parseAddressField(raw) {
   try {
@@ -83,7 +84,7 @@ export default function MessagePane() {
     messages, searchResults, searchQuery, selectedMessageId, setSelectedMessage,
     updateMessage, removeMessage, decrementUnread, incrementUnread, openCompose, accounts, addNotification,
     imageWhitelist, addToImageWhitelist, blockRemoteImages, threadMessages,
-    replyDefault, shortcuts, recentFolders, favoriteFolders,
+    replyDefault, shortcuts, recentFolders, favoriteFolders, todoistConnected,
   } = useStore();
 
   const isMobile = useMobile();
@@ -153,6 +154,7 @@ export default function MessagePane() {
   const [movePickerFolders, setMovePickerFolders] = useState([]);
   const [movePickerLoading, setMovePickerLoading] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showTodoistModal, setShowTodoistModal] = useState(false);
   const moveBtnRef = useRef(null);
   const moreMenuRef = useRef(null);
   const scrollContainerRef = useRef(null);
@@ -1381,6 +1383,20 @@ ${bodyContent}
                 borderRadius: 8, overflow: 'hidden', zIndex: 100,
                 boxShadow: '0 4px 20px rgba(0,0,0,0.4)', minWidth: 190,
               }}>
+                {todoistConnected && (
+                  <div
+                    onClick={() => { setShowTodoistModal(true); setShowMoreMenu(false); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                      <circle cx="12" cy="12" r="9"/>
+                      <polyline points="9 12 11 14 15 10"/>
+                    </svg>
+                    {t('todoist.title')}
+                  </div>
+                )}
                 <div
                   onClick={() => { setShowHeaderModal(true); setShowMoreMenu(false); }}
                   style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)' }}
@@ -1411,6 +1427,14 @@ ${bodyContent}
           </div>
         ) : (
           <>
+            {todoistConnected && (
+              <PaneBtn onClick={() => setShowTodoistModal(true)} title={t('todoist.title')}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                  <circle cx="12" cy="12" r="9"/>
+                  <polyline points="9 12 11 14 15 10"/>
+                </svg>
+              </PaneBtn>
+            )}
             <PaneBtn onClick={() => setShowHeaderModal(true)} title={t('contextMenu.viewHeaders')}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
                 <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
@@ -1965,6 +1989,13 @@ ${bodyContent}
           messageId={message.id}
           subject={message.subject}
           onClose={() => setShowHeaderModal(false)}
+        />
+      )}
+
+      {showTodoistModal && (
+        <TodoistTaskModal
+          message={message}
+          onClose={() => setShowTodoistModal(false)}
         />
       )}
     </div>

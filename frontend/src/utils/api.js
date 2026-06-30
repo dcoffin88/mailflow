@@ -192,4 +192,14 @@ export const api = {
   getBlockList:          ()      => request('GET',    '/block-list'),
   addToBlockList:        (email) => request('POST',   '/block-list', { emailAddress: email }),
   removeFromBlockList:   (id)    => request('DELETE', `/block-list/${id}`),
+
+  // Todoist integration
+  todoist: {
+    status:       ()       => request('GET',    '/todoist/status'),
+    connect:      (token)  => request('POST',   '/todoist/connect', { token }),
+    disconnect:   ()       => request('DELETE', '/todoist/disconnect'),
+    getProjects:  ()       => request('GET',    '/todoist/projects'),
+    getLabels:    ()       => request('GET',    '/todoist/labels'),
+    createTask:   (data)   => request('POST',   '/todoist/tasks', data),
+  },
 };

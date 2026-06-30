@@ -879,6 +879,8 @@
       "title": "集成",
       "description": "为不支持应用专用密码的账户配置 OAuth 服务商",
       "loading": "加载中…",
+      "tabEmailProviders": "邮件提供商",
+      "tabApps": "应用",
       "microsoft": {
         "title": "Microsoft 365 / Outlook.com",
         "description": "为企业、学校或个人 Microsoft 账户（Outlook.com、Hotmail）提供 OAuth2 支持",
@@ -917,6 +919,18 @@
         "deviceCodeDeclined": "授权被拒绝。",
         "deviceCodeError": "发生错误，请重试。",
         "deviceCodeCancel": "取消"
+      },
+      "todoist": {
+        "title": "Todoist",
+        "description": "个人任务管理器集成",
+        "connect": "连接",
+        "connecting": "连接中...",
+        "disconnect": "断开",
+        "connected": "已连接",
+        "notConnected": "未连接",
+        "tokenLabel": "个人 API 令牌",
+        "tokenPh": "粘贴您的 Todoist API 令牌",
+        "help": "在 Todoist 设置 → 集成 → 开发者中找到您的令牌"
       }
     },
     "ssoLinked": {
@@ -983,5 +997,27 @@
       "home": "家庭",
       "other": "其他"
     }
+  },
+  "todoist": {
+    "betaLabel": "测试版",
+    "title": "创建 Todoist 任务",
+    "taskTitle": "任务标题",
+    "taskTitlePh": "需要做什么？",
+    "description": "描述",
+    "descriptionPh": "可选备注...",
+    "project": "项目",
+    "inbox": "收件箱",
+    "labels": "标签",
+    "priority": "优先级",
+    "priorityUrgent": "紧急",
+    "priorityHigh": "高",
+    "priorityMedium": "中",
+    "priorityNormal": "无优先级",
+    "dueDate": "截止日期",
+    "dueDatePh": "例如：明天、下周一",
+    "create": "创建任务",
+    "creating": "创建中...",
+    "taskCreated": "任务已在 Todoist 中创建",
+    "openTask": "在 Todoist 中打开"
   }
 }

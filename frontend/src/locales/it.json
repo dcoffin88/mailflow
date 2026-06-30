@@ -879,6 +879,8 @@
       "title": "Integrazioni",
       "description": "Connetti provider OAuth per account che non supportano password per app",
       "loading": "Caricamento…",
+      "tabEmailProviders": "Provider email",
+      "tabApps": "App",
       "microsoft": {
         "title": "Microsoft 365 / Outlook.com",
         "description": "OAuth2 per account Microsoft aziendali, scolastici o personali (Outlook.com, Hotmail)",
@@ -917,6 +919,18 @@
         "deviceCodeDeclined": "L'autorizzazione è stata rifiutata.",
         "deviceCodeError": "Si è verificato un errore. Riprova.",
         "deviceCodeCancel": "Annulla"
+      },
+      "todoist": {
+        "title": "Todoist",
+        "description": "Integrazione con gestore di attività personale",
+        "connect": "Connetti",
+        "connecting": "Connessione...",
+        "disconnect": "Disconnetti",
+        "connected": "Connesso",
+        "notConnected": "Non connesso",
+        "tokenLabel": "Token API personale",
+        "tokenPh": "Incolla il tuo token API Todoist",
+        "help": "Trova il token in Todoist Impostazioni → Integrazioni → Sviluppatore"
       }
     },
     "ssoLinked": {
@@ -983,5 +997,27 @@
       "home": "Casa",
       "other": "Altro"
     }
+  },
+  "todoist": {
+    "betaLabel": "Beta",
+    "title": "Crea attività Todoist",
+    "taskTitle": "Titolo dell'attività",
+    "taskTitlePh": "Cosa c'è da fare?",
+    "description": "Descrizione",
+    "descriptionPh": "Note opzionali...",
+    "project": "Progetto",
+    "inbox": "Posta in arrivo",
+    "labels": "Etichette",
+    "priority": "Priorità",
+    "priorityUrgent": "Urgente",
+    "priorityHigh": "Alta",
+    "priorityMedium": "Media",
+    "priorityNormal": "Nessuna priorità",
+    "dueDate": "Data di scadenza",
+    "dueDatePh": "es. domani, lunedì prossimo",
+    "create": "Crea attività",
+    "creating": "Creazione...",
+    "taskCreated": "Attività creata in Todoist",
+    "openTask": "Apri in Todoist"
   }
 }

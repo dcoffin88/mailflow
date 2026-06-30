@@ -816,6 +816,8 @@
       "title": "Integrationen",
       "description": "OAuth-Anbieter für Konten verbinden, die keine App-Passwörter unterstützen",
       "loading": "Lädt…",
+      "tabEmailProviders": "E-Mail-Anbieter",
+      "tabApps": "Anwendungen",
       "microsoft": {
         "title": "Microsoft 365 / Outlook.com",
         "description": "OAuth2 für Geschäfts-, Schul- oder persönliche Microsoft-Konten (Outlook.com, Hotmail)",
@@ -854,6 +856,18 @@
         "deviceCodeDeclined": "Autorisierung wurde abgelehnt.",
         "deviceCodeError": "Ein Fehler ist aufgetreten. Bitte erneut versuchen.",
         "deviceCodeCancel": "Abbrechen"
+      },
+      "todoist": {
+        "title": "Todoist",
+        "description": "Integration für persönliche Aufgabenverwaltung",
+        "connect": "Verbinden",
+        "connecting": "Verbinde...",
+        "disconnect": "Trennen",
+        "connected": "Verbunden",
+        "notConnected": "Nicht verbunden",
+        "tokenLabel": "Persönliches API-Token",
+        "tokenPh": "Todoist-API-Token einfügen",
+        "help": "Token unter Todoist Einstellungen → Integrationen → Entwickler finden"
       }
     },
     "ssoLinked": {
@@ -983,5 +997,27 @@
       "home": "Privat",
       "other": "Sonstige"
     }
+  },
+  "todoist": {
+    "betaLabel": "Beta",
+    "title": "Todoist-Aufgabe erstellen",
+    "taskTitle": "Aufgabentitel",
+    "taskTitlePh": "Was muss erledigt werden?",
+    "description": "Beschreibung",
+    "descriptionPh": "Optionale Notizen...",
+    "project": "Projekt",
+    "inbox": "Posteingang",
+    "labels": "Labels",
+    "priority": "Priorität",
+    "priorityUrgent": "Dringend",
+    "priorityHigh": "Hoch",
+    "priorityMedium": "Mittel",
+    "priorityNormal": "Keine Priorität",
+    "dueDate": "Fälligkeitsdatum",
+    "dueDatePh": "z.B. morgen, nächsten Montag",
+    "create": "Aufgabe erstellen",
+    "creating": "Wird erstellt...",
+    "taskCreated": "Aufgabe in Todoist erstellt",
+    "openTask": "In Todoist öffnen"
   }
 }
