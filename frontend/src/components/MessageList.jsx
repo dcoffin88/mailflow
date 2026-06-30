@@ -550,32 +550,77 @@ export default function MessageList() {
   }, [threadMessages, setThreadMessages]);
 
   const setMessagesReadState = useCallback(async (message, read) => {
+    const isThreadRow = isThreadListRow(message);
+    const unreadCount = Number.parseInt(message.unread_count, 10);
+    // Use the row's own unread_count as the immediate estimate.
+    // For thread rows this is the aggregate already present on the row;
+    // for single messages it is always 1 (or 0 if already in the target state).
+    const estimatedDelta = isThreadRow && Number.isFinite(unreadCount) ? unreadCount : 1;
+
+    // Immediate optimistic update — do not wait for thread resolution.
+    // For unexpanded thread rows this avoids a visible delay caused by the
+    // api.getThread call inside resolveMessagesForThreadAction.
+    if (isThreadRow) {
+      updateMessage(message.id, { is_read: read, unread_count: read ? 0 : estimatedDelta });
+      // setCachedThreadRead intentionally deferred until after resolution so
+      // that actionMessages still reflects the pre-update sub-message states,
+      // letting us compute the exact delta for any needed correction.
+    } else {
+      updateMessage(message.id, { is_read: read, unread_count: read ? 0 : 1 });
+    }
+    if (read) {
+      if (estimatedDelta > 0) decrementUnread(message.account_id, estimatedDelta);
+    } else {
+      if (estimatedDelta > 0) incrementUnread(message.account_id, estimatedDelta);
+    }
+
+    // Resolve the individual sub-messages needed for the bulk API call.
+    // For unexpanded thread rows this fires api.getThread, but the UI has
+    // already updated above so the user sees no delay.
     let actionMessages;
     try {
       actionMessages = await resolveMessagesForThreadAction(message);
     } catch (err) {
       console.error('Failed to load thread for read state change:', err.message);
+      // Revert the optimistic update
+      if (isThreadRow) {
+        updateMessage(message.id, { is_read: !read, unread_count: !read ? 0 : estimatedDelta });
+      } else {
+        updateMessage(message.id, { is_read: !read, unread_count: !read ? 0 : 1 });
+      }
+      if (read && estimatedDelta > 0) incrementUnread(message.account_id, estimatedDelta);
+      else if (!read && estimatedDelta > 0) decrementUnread(message.account_id, estimatedDelta);
       return;
     }
 
-    const isThreadRow = isThreadListRow(message);
-    const unreadCount = Number.parseInt(message.unread_count, 10);
-    const unreadDelta = read
-      ? (isThreadRow && Number.isFinite(unreadCount) ? unreadCount : actionMessages.filter(msg => !msg.is_read).length)
+    // Compute exact delta from sub-message states (before mutating the cache).
+    const actualDelta = read
+      ? actionMessages.filter(msg => !msg.is_read).length
       : actionMessages.filter(msg => msg.is_read).length;
 
+    // Now update the thread cache and correct the parent row if our estimate was off.
     if (isThreadRow) {
-      updateMessage(message.id, { is_read: read, unread_count: read ? 0 : actionMessages.length });
       setCachedThreadRead(message, read);
-    } else {
-      updateMessage(message.id, { is_read: read, unread_count: read ? 0 : 1 });
+      if (actualDelta !== estimatedDelta) {
+        updateMessage(message.id, { is_read: read, unread_count: read ? 0 : actionMessages.length });
+      }
+    }
+
+    // Correct the sidebar badge if the estimate differed from the actual count.
+    if (actualDelta !== estimatedDelta) {
+      const diff = actualDelta - estimatedDelta;
+      if (read) {
+        if (diff > 0) decrementUnread(message.account_id, diff);
+        else incrementUnread(message.account_id, -diff);
+      } else {
+        if (diff > 0) incrementUnread(message.account_id, diff);
+        else decrementUnread(message.account_id, -diff);
+      }
     }
 
     if (read) {
-      if (unreadDelta > 0) decrementUnread(message.account_id, unreadDelta);
       actionMessages.forEach(msg => setPending(msg.id, msg.account_id));
     } else {
-      if (unreadDelta > 0) incrementUnread(message.account_id, unreadDelta);
       actionMessages.forEach(msg => {
         pendingMarkReadMap.delete(msg.id);
         completedMarkReadMap.delete(msg.id);
@@ -594,16 +639,16 @@ export default function MessageList() {
     } catch (err) {
       console.error('markRead failed:', err);
       if (isThreadRow) {
-        updateMessage(message.id, { is_read: !read, unread_count: read ? unreadDelta : 0 });
+        updateMessage(message.id, { is_read: !read, unread_count: read ? actualDelta : 0 });
         setCachedThreadRead(message, !read);
       } else {
         updateMessage(message.id, { is_read: !read, unread_count: read ? 1 : 0 });
       }
       if (read) {
-        if (unreadDelta > 0) incrementUnread(message.account_id, unreadDelta);
+        if (actualDelta > 0) incrementUnread(message.account_id, actualDelta);
         actionMessages.forEach(msg => pendingMarkReadMap.delete(msg.id));
-      } else if (unreadDelta > 0) {
-        decrementUnread(message.account_id, unreadDelta);
+      } else if (actualDelta > 0) {
+        decrementUnread(message.account_id, actualDelta);
       }
     }
   }, [
