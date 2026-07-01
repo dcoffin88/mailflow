@@ -116,7 +116,7 @@ router.get('/labels', async (req, res) => {
 router.post('/tasks', async (req, res) => {
   try {
     const token = await getTodoistToken(req.session.userId);
-    const { content, description, project_id, labels, priority, due_string } = req.body;
+    const { content, description, project_id, labels, priority, due_string, due_date } = req.body;
     if (!content || !content.trim()) {
       return res.status(400).json({ error: 'Task title is required' });
     }
@@ -126,8 +126,9 @@ router.post('/tasks', async (req, res) => {
     if (labels?.length) taskData.labels = labels;
     if (priority && priority > 1) taskData.priority = priority;
     if (due_string) taskData.due_string = due_string;
+    if (due_date) taskData.due_date = due_date;
     const task = await todoistFetch(token, 'POST', '/tasks', taskData);
-    res.json(task);
+    res.json({ ...task, url: `https://app.todoist.com/app/task/${task.id}` });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
   }
