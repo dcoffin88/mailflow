@@ -419,7 +419,7 @@ export default function ComposeModal() {
   useEffect(() => {
     api.ai.status().then(setAiStatus).catch(() => {});
     return () => { aiAbortRef.current?.abort(); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Position cursor at top for replies/forwards
   useEffect(() => {

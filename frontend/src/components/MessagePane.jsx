@@ -983,7 +983,7 @@ ${bodyContent}
   useEffect(() => {
     api.ai.status().then(setAiStatus).catch(() => {});
     return () => { aiSummarizeAbortRef.current?.abort(); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDownload = async (messageId, part, filename) => {
     setDownloadingPart(part);
