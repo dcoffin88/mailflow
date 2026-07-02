@@ -7,7 +7,9 @@ import { query, pool } from '../services/db.js';
 import { imapManager } from '../index.js';
 import { decrypt, encrypt } from '../services/encryption.js';
 import { pushConfigured } from '../services/pushNotifications.js';
-import { validateHost } from '../services/hostValidation.js';
+import nodemailer from 'nodemailer';
+import { validateHost, resolveForConnection } from '../services/hostValidation.js';
+import { getConnectionPolicy } from '../services/connectionPolicy.js';
 import { authLimiterConfig } from '../services/authLimiter.js';
 import { logAuthEvent } from '../services/authEvents.js';
 import { sendSystemEmail } from '../services/mailer.js';
@@ -845,25 +847,81 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1-hour window
       const resetUrl = `${process.env.APP_URL || ''}/?reset_token=${rawToken}`;
 
-      // Send the email before persisting the token. If delivery fails (e.g. system
-      // email not configured), nothing is saved and the user can retry. This avoids
-      // orphaned tokens for links that were never delivered.
-      await sendSystemEmail({
-        to: trimmed,
-        subject: 'Reset your MailFlow password',
-        text: `You requested a password reset for your MailFlow account.\n\nClick the link below to set a new password. This link expires in 1 hour.\n\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`,
-        html: `
-          <div style="font-family:-apple-system,Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;color:#1a1a1a;">
-            <div style="margin-bottom:24px;">
-              <span style="font-size:22px;font-weight:700;color:#1a1a1a;">Mail</span><span style="font-size:22px;font-weight:600;color:#7c6af7;">Flow</span>
-            </div>
-            <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;">Reset your password</h2>
-            <p style="color:#555;line-height:1.6;margin:0 0 24px;">Click the button below to set a new password. This link expires in 1 hour.</p>
-            <a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background:#7c6af7;color:white;border-radius:8px;text-decoration:none;font-weight:500;font-size:14px;margin-bottom:24px;">Reset password</a>
-            <p style="color:#999;font-size:12px;margin:0;">If you did not request a password reset, you can ignore this email. Your password will not change.</p>
+      // Send the email before persisting the token. If delivery fails, nothing is
+      // saved and the user can retry cleanly.
+      // Transport preference: system SMTP → account owner's first personal SMTP account.
+      const emailSubject = 'Reset your MailFlow password';
+      const emailText = `You requested a password reset for your MailFlow account.\n\nClick the link below to set a new password. This link expires in 1 hour.\n\n${resetUrl}\n\nIf you did not request this, you can ignore this email.`;
+      const emailHtml = `
+        <div style="font-family:-apple-system,Arial,sans-serif;max-width:480px;margin:0 auto;padding:32px;color:#1a1a1a;">
+          <div style="margin-bottom:24px;">
+            <span style="font-size:22px;font-weight:700;color:#1a1a1a;">Mail</span><span style="font-size:22px;font-weight:600;color:#7c6af7;">Flow</span>
           </div>
-        `,
-      });
+          <h2 style="margin:0 0 12px;font-size:18px;font-weight:600;">Reset your password</h2>
+          <p style="color:#555;line-height:1.6;margin:0 0 24px;">Click the button below to set a new password. This link expires in 1 hour.</p>
+          <a href="${resetUrl}" style="display:inline-block;padding:12px 24px;background:#7c6af7;color:white;border-radius:8px;text-decoration:none;font-weight:500;font-size:14px;margin-bottom:24px;">Reset password</a>
+          <p style="color:#999;font-size:12px;margin:0;">If you did not request a password reset, you can ignore this email. Your password will not change.</p>
+        </div>
+      `;
+
+      let transport = null;
+      let fromHeader = null;
+
+      // 1. Try system SMTP
+      try {
+        const sysResult = await query("SELECT value FROM system_settings WHERE key = 'system_email_config'");
+        if (sysResult.rows.length) {
+          const cfg = JSON.parse(sysResult.rows[0].value);
+          const pass = cfg.pass ? decrypt(cfg.pass) : null;
+          if (cfg.host && cfg.user && pass) {
+            const sysResolved = await resolveForConnection(cfg.host);
+            const sysTls = { rejectUnauthorized: true };
+            if (sysResolved.servername) sysTls.servername = sysResolved.servername;
+            transport = nodemailer.createTransport({
+              host: sysResolved.host, port: cfg.port || 587,
+              secure: (cfg.port || 587) === 465,
+              auth: { user: cfg.user, pass }, tls: sysTls,
+            });
+            fromHeader = `${cfg.fromName || 'MailFlow'} <${cfg.fromEmail || cfg.user}>`;
+          }
+        }
+      } catch { /* fall through to personal account */ }
+
+      // 2. Fall back to the account owner's first personal SMTP account,
+      //    then any admin's first SMTP account (mirrors the invite email fallback).
+      if (!transport) {
+        const accountResult = await query(
+          `SELECT ea.* FROM email_accounts ea
+           JOIN users u ON ea.user_id = u.id
+           WHERE ea.enabled = true AND ea.smtp_host IS NOT NULL
+             AND (ea.user_id = $1 OR u.is_admin = true)
+           ORDER BY (ea.user_id = $1) DESC, ea.created_at
+           LIMIT 1`,
+          [user.id]
+        );
+        if (accountResult.rows.length) {
+          const acct = accountResult.rows[0];
+          let smtpAuth;
+          if ((acct.oauth_provider === 'microsoft' || acct.oauth_provider === 'google') && acct.oauth_access_token) {
+            smtpAuth = { type: 'OAuth2', user: acct.auth_user || acct.email_address, accessToken: decrypt(acct.oauth_access_token) };
+          } else {
+            smtpAuth = { user: acct.auth_user, pass: decrypt(acct.auth_pass) };
+          }
+          const policy = await getConnectionPolicy();
+          const acctResolved = await resolveForConnection(acct.smtp_host, { allowPrivate: policy.allowPrivateHosts });
+          const acctTls = { rejectUnauthorized: policy.allowInsecureTls ? !acct.imap_skip_tls_verify : true };
+          if (acctResolved.servername) acctTls.servername = acctResolved.servername;
+          transport = nodemailer.createTransport({
+            host: acctResolved.host, port: acct.smtp_port,
+            secure: acct.smtp_port === 465,
+            auth: smtpAuth, tls: acctTls,
+          });
+          fromHeader = `${acct.name} <${acct.email_address}>`;
+        }
+      }
+
+      if (!transport) throw new Error('No email transport available');
+      await transport.sendMail({ from: fromHeader, to: trimmed, subject: emailSubject, text: emailText, html: emailHtml });
 
       await query('DELETE FROM password_reset_tokens WHERE user_id = $1', [user.id]);
       await query(

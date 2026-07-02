@@ -887,20 +887,9 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                <label style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                  {t('login.password')}
-                </label>
-                {mode === 'login' && !internalAuthDisabled && (
-                  <button
-                    type="button"
-                    onClick={() => { setMode('forgot'); setError(''); }}
-                    style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', padding: 0 }}
-                  >
-                    {t('login.forgotPassword.link')}
-                  </button>
-                )}
-              </div>
+              <label style={{ display: 'block', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                {t('login.password')}
+              </label>
               <input
                 type="password"
                 value={password}
@@ -914,6 +903,15 @@ export default function LoginPage() {
                 onFocus={e => e.target.style.borderColor = 'var(--accent)'}
                 onBlur={e => e.target.style.borderColor = 'var(--border)'}
               />
+              {mode === 'login' && !internalAuthDisabled && (
+                <button
+                  type="button"
+                  onClick={() => { setMode('forgot'); setError(''); }}
+                  style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 12, cursor: 'pointer', padding: '6px 0 0', display: 'block' }}
+                >
+                  {t('login.forgotPassword.link')}
+                </button>
+              )}
             </div>
 
             {error && (
