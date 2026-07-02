@@ -4,6 +4,11 @@ import { useStore } from '../store/index.js';
 import { api } from '../utils/api.js';
 import MessageHeaderModal from './MessageHeaderModal.jsx';
 
+// Module-level regex — spam-name heuristic shared with MessagePane.jsx so
+// it isn't recompiled on every render. Mirrors resolveAllSpamPaths on the
+// backend; keep these three in sync when adding a new locale.
+const SPAM_NAME_RE = /(spam|junk|bulk|indesiderata|spamverdacht|courrier\s*ind|posta\s*indesiderata)/i;
+
 // ─── Context Menu ─────────────────────────────────────────────────────────────
 export default function ContextMenu({ x, y, message, onClose, onAction, defaultMoveView = false }) {
   const { t } = useTranslation();
@@ -29,7 +34,6 @@ export default function ContextMenu({ x, y, message, onClose, onAction, defaultM
   // server tagged it with \Junk special-use. Falls back to a multilingual name
   // heuristic so unconfigured accounts still get sensible context-menu items.
   // Mirrors resolveAllSpamPaths on the backend so server and client agree.
-  const SPAM_NAME_RE = /(spam|junk|bulk|indesiderata|spamverdacht|courrier\s*ind|posta\s*indesiderata)/i;
   const spamFolderPaths = (() => {
     const mapped = account?.folder_mappings?.spam;
     if (mapped) return new Set([mapped]);

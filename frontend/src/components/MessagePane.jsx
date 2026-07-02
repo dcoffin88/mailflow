@@ -10,6 +10,10 @@ import { clearDeleteGuard, clearPendingDelete, setCompletedDelete, setPendingDel
 import { pendingMarkReadMap, completedMarkReadMap, setPending } from '../utils/pendingReads.js';
 const USE_DIV_RENDER = import.meta.env.VITE_EMAIL_DIV_RENDER === 'true';
 
+// Module-level regex so the spam-name heuristic isn't recompiled on every
+// render — same heuristic as ContextMenu.jsx, both files read this constant.
+const SPAM_NAME_RE = /(spam|junk|bulk|indesiderata|spamverdacht|courrier\s*ind|posta\s*indesiderata)/i;
+
 // Lazy-load the div-renderer utilities so PostCSS is excluded from the flag-off
 // bundle. Rollup treats the import() calls inside this block as dead code when
 // USE_DIV_RENDER compiles to false, stripping PostCSS and both utility modules.
@@ -166,7 +170,6 @@ export default function MessagePane() {
   // Mirrors the heuristic in ContextMenu.jsx so the toolbar matches the menu.
   const account = accounts.find(a => a.id === message?.account_id);
   const accountFolders = useStore(s => s.folders[message?.account_id] || []);
-  const SPAM_NAME_RE = /(spam|junk|bulk|indesiderata|spamverdacht|courrier\s*ind|posta\s*indesiderata)/i;
   const spamFolderPaths = (() => {
     const mapped = account?.folder_mappings?.spam;
     if (mapped) return new Set([mapped]);
