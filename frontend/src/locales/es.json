@@ -349,6 +349,8 @@
     },
     "createRule": "Crear regla desde este mensaje",
     "addToBlockList": "Añadir a la lista de bloqueo",
+    "markAsSpam": "Marcar como Spam",
+    "markAsHam": "Marcar como no Spam",
     "copySubject": "Copiar asunto",
     "copySender": "Copiar dirección del remitente",
     "viewHeaders": "Ver encabezados completos",
@@ -994,6 +996,17 @@
   "blockList": {
     "blocked": "Bloqueado",
     "errorAdd": "No se pudo bloquear al remitente"
+  },
+  "spam": {
+    "movedToSpam": "Movido a Spam",
+    "movedToSpamBulk": "{{count}} mensajes movidos a Spam",
+    "movedToInbox": "Movido a la bandeja de entrada",
+    "movedToInboxBulk": "{{count}} mensajes movidos a la bandeja de entrada",
+    "failTitle": "No se pudo marcar como spam",
+    "failHamTitle": "No se pudo marcar como no spam",
+    "failBody": "El servidor de correo rechazó el movimiento.",
+    "failHamBody": "El servidor de correo rechazó el movimiento.",
+    "failBodyBulk": "{{count}} mensajes no se pudieron mover."
   },
   "contacts": {
     "title": "Contactos",

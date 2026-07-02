@@ -349,6 +349,8 @@
     },
     "createRule": "Crea regola da questo messaggio",
     "addToBlockList": "Aggiungi alla lista blocchi",
+    "markAsSpam": "Segnala come Spam",
+    "markAsHam": "Segnala come Non Spam",
     "copySubject": "Copia oggetto",
     "copySender": "Copia indirizzo mittente",
     "viewHeaders": "Visualizza intestazioni complete",
@@ -994,6 +996,17 @@
   "blockList": {
     "blocked": "Bloccato",
     "errorAdd": "Impossibile bloccare il mittente"
+  },
+  "spam": {
+    "movedToSpam": "Spostato in Spam",
+    "movedToSpamBulk": "{{count}} messaggi spostati in Spam",
+    "movedToInbox": "Spostato in Posta in arrivo",
+    "movedToInboxBulk": "{{count}} messaggi spostati in Posta in arrivo",
+    "failTitle": "Impossibile segnalare come spam",
+    "failHamTitle": "Impossibile segnalare come non spam",
+    "failBody": "Il server di posta ha rifiutato lo spostamento.",
+    "failHamBody": "Il server di posta ha rifiutato lo spostamento.",
+    "failBodyBulk": "{{count}} messaggi non possono essere spostati."
   },
   "contacts": {
     "title": "Contatti",

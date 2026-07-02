@@ -10,6 +10,10 @@ import { clearDeleteGuard, clearPendingDelete, setCompletedDelete, setPendingDel
 import { pendingMarkReadMap, completedMarkReadMap, setPending } from '../utils/pendingReads.js';
 const USE_DIV_RENDER = import.meta.env.VITE_EMAIL_DIV_RENDER === 'true';
 
+// Module-level regex so the spam-name heuristic isn't recompiled on every
+// render — same heuristic as ContextMenu.jsx, both files read this constant.
+const SPAM_NAME_RE = /(spam|junk|bulk|indesiderata|spamverdacht|courrier\s*ind|posta\s*indesiderata)/i;
+
 // Lazy-load the div-renderer utilities so PostCSS is excluded from the flag-off
 // bundle. Rollup treats the import() calls inside this block as dead code when
 // USE_DIV_RENDER compiles to false, stripping PostCSS and both utility modules.
@@ -161,6 +165,56 @@ export default function MessagePane() {
   const allMessages = searchQuery.trim() ? searchResults : messages;
   const message = allMessages.find(m => m.id === selectedMessageId)
     ?? Object.values(threadMessages).flat().find(m => m.id === selectedMessageId);
+
+  // Antispam (v0.1) — toolbar visibility for the spam / ham buttons.
+  // Mirrors the heuristic in ContextMenu.jsx so the toolbar matches the menu.
+  const account = accounts.find(a => a.id === message?.account_id);
+  const accountFolders = useStore(s => s.folders[message?.account_id] || []);
+  const spamFolderPaths = (() => {
+    const mapped = account?.folder_mappings?.spam;
+    if (mapped) return new Set([mapped]);
+    return new Set(accountFolders.filter(f =>
+      f.special_use === '\\Junk' || SPAM_NAME_RE.test(f.name || '')
+    ).map(f => f.path));
+  })();
+  const inSpamFolder = message ? spamFolderPaths.has(message.folder) : false;
+  const hasSpamFolder = spamFolderPaths.size > 0;
+
+  // Mark current message as spam / ham from the MessagePane toolbar.
+  // Mirrors MessageList.performSpamLabel (single-message variant). Kept inline
+  // here so the MessagePane doesn't need to reach into MessageList internals.
+  const performSingleSpamLabel = useCallback(async (label) => {
+    if (!message) return;
+    const wasUnread = !message.is_read;
+    removeMessage(message.id);
+    if (wasUnread) decrementUnread(message.account_id);
+    let settled = false;
+    const undo = () => {
+      settled = true;
+      useStore.getState().restoreMessages([message]);
+      if (wasUnread) incrementUnread(message.account_id);
+    };
+    setTimeout(async () => {
+      if (settled) return;
+      try {
+        const fn = label === 'spam' ? api.markSpam : api.markHam;
+        await fn(message.id);
+      } catch (err) {
+        useStore.getState().restoreMessages([message]);
+        if (wasUnread) incrementUnread(message.account_id);
+        addNotification({
+          type: 'error',
+          title: t(label === 'spam' ? 'spam.failTitle' : 'spam.failHamTitle'),
+          body: err.message || t(label === 'spam' ? 'spam.failBody' : 'spam.failHamBody'),
+        });
+      }
+    }, 4500);
+    addNotification({
+      title: label === 'spam' ? t('spam.movedToSpam') : t('spam.movedToInbox'),
+      body: message.subject || t('common.noSubject'),
+      onUndo: undo,
+    });
+  }, [message, removeMessage, decrementUnread, incrementUnread, addNotification, t]);
 
   const currentIdx = allMessages.findIndex(m => m.id === selectedMessageId);
   const hasPrev = currentIdx > 0;
@@ -1454,6 +1508,34 @@ ${bodyContent}
                     {t('contextMenu.markUnread')}
                   </div>
                 )}
+                {hasSpamFolder && !inSpamFolder && message && (
+                  <div
+                    onClick={() => { performSingleSpamLabel('spam'); setShowMoreMenu(false); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                      <path d="M12 3L4 7v5c0 5 3.5 9.3 8 10.3C16.5 21.3 20 17 20 12V7L12 3z"/>
+                      <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    {t('contextMenu.markAsSpam')}
+                  </div>
+                )}
+                {inSpamFolder && message && (
+                  <div
+                    onClick={() => { performSingleSpamLabel('ham'); setShowMoreMenu(false); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-subtle)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                      <path d="M12 3L4 7v5c0 5 3.5 9.3 8 10.3C16.5 21.3 20 17 20 12V7L12 3z"/>
+                      <polyline points="9 12 11 14 15 10"/>
+                    </svg>
+                    {t('contextMenu.markAsHam')}
+                  </div>
+                )}
                 {todoistConnected && (
                   <div
                     onClick={() => { setShowTodoistModal(true); setShowMoreMenu(false); }}
@@ -1497,6 +1579,22 @@ ${bodyContent}
           </div>
         ) : (
           <>
+            {hasSpamFolder && !inSpamFolder && message && (
+              <PaneBtn onClick={() => performSingleSpamLabel('spam')} title={t('contextMenu.markAsSpam')}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                  <path d="M12 3L4 7v5c0 5 3.5 9.3 8 10.3C16.5 21.3 20 17 20 12V7L12 3z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+              </PaneBtn>
+            )}
+            {inSpamFolder && message && (
+              <PaneBtn onClick={() => performSingleSpamLabel('ham')} title={t('contextMenu.markAsHam')}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
+                  <path d="M12 3L4 7v5c0 5 3.5 9.3 8 10.3C16.5 21.3 20 17 20 12V7L12 3z"/>
+                  <polyline points="9 12 11 14 15 10"/>
+                </svg>
+              </PaneBtn>
+            )}
             {todoistConnected && (
               <PaneBtn onClick={() => setShowTodoistModal(true)} title={t('todoist.title')}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
