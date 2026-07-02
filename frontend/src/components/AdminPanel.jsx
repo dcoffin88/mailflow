@@ -2911,6 +2911,146 @@ function SSOTab() {
   );
 }
 
+// ─── AI Section ───────────────────────────────────────────────────────────────
+function AISection() {
+  const { t } = useTranslation();
+  const [config, setConfig] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ enabled: true, baseUrl: '', apiKey: '', model: '', features: { compose: true, summarize: true } });
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    api.ai.getConfig()
+      .then(({ config: cfg }) => {
+        if (cfg) {
+          setConfig(cfg);
+          setForm({ enabled: cfg.enabled !== false, baseUrl: cfg.baseUrl || '', apiKey: cfg.apiKey || '', model: cfg.model || '', features: { compose: cfg.features?.compose !== false, summarize: cfg.features?.summarize !== false } });
+        }
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async (e) => {
+    e.preventDefault();
+    setSaving(true); setMsg(null);
+    try {
+      await api.ai.saveConfig(form);
+      setConfig({ ...form });
+      setMsg({ type: 'ok', text: t('admin.ai.saved') });
+    } catch (err) {
+      setMsg({ type: 'error', text: err.message });
+    } finally { setSaving(false); }
+  };
+
+  const handleTest = async () => {
+    setTesting(true); setMsg(null);
+    try {
+      await api.ai.test();
+      setMsg({ type: 'ok', text: t('admin.ai.testOk') });
+    } catch (err) {
+      setMsg({ type: 'error', text: `${t('admin.ai.testFail')}: ${err.message}` });
+    } finally { setTesting(false); }
+  };
+
+  const handleRemove = async () => {
+    await api.ai.deleteConfig();
+    setConfig(null);
+    setForm({ enabled: true, baseUrl: '', apiKey: '', model: '', features: { compose: true, summarize: true } });
+    setMsg({ type: 'ok', text: t('admin.ai.removed') });
+  };
+
+  const field = (label, key, type = 'text', placeholder = '') => (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 5 }}>{label}</label>
+      <input
+        type={type}
+        value={form[key]}
+        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+        placeholder={placeholder}
+        autoComplete={type === 'password' ? 'new-password' : 'off'}
+        style={{ width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', color: 'var(--text-primary)', fontSize: 13 }}
+      />
+    </div>
+  );
+
+  const toggle = (label, checked, onChange) => (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 10 }}>
+      <div
+        onClick={onChange}
+        style={{
+          width: 36, height: 20, borderRadius: 10, position: 'relative', cursor: 'pointer', flexShrink: 0,
+          background: checked ? 'var(--accent)' : 'var(--border)', transition: 'background 0.2s',
+        }}
+      >
+        <div style={{
+          position: 'absolute', top: 2, left: checked ? 18 : 2, width: 16, height: 16,
+          borderRadius: '50%', background: '#fff', transition: 'left 0.2s',
+        }} />
+      </div>
+      <span style={{ fontSize: 13, color: 'var(--text-primary)' }}>{label}</span>
+    </label>
+  );
+
+  const msgBox = msg && (
+    <div style={{ padding: '8px 12px', borderRadius: 6, marginBottom: 14, fontSize: 13,
+      background: msg.type === 'ok' ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)',
+      color: msg.type === 'ok' ? 'var(--green)' : 'var(--red)',
+      border: `1px solid ${msg.type === 'ok' ? 'rgba(74,222,128,0.2)' : 'rgba(248,113,113,0.2)'}`,
+    }}>{msg.text}</div>
+  );
+
+  if (loading) return <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>{t('common.loading')}</div>;
+
+  return (
+    <div>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 0, marginBottom: 20 }}>
+        {t('admin.ai.description')}
+      </p>
+
+      {config && (
+        <div style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', marginBottom: 20, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{config.model}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{config.baseUrl}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={handleTest} disabled={testing} style={{ fontSize: 12, padding: '5px 12px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer' }}>
+              {testing ? t('admin.ai.testing') : t('admin.ai.test')}
+            </button>
+            <button onClick={handleRemove} style={{ fontSize: 12, padding: '5px 12px', background: 'none', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--red)', cursor: 'pointer' }}>
+              {t('admin.ai.remove')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={handleSave}>
+        {toggle(t('admin.ai.enabled'), form.enabled, () => setForm(f => ({ ...f, enabled: !f.enabled })))}
+
+        {field(t('admin.ai.baseUrl'), 'baseUrl', 'text', t('admin.ai.baseUrlPh'))}
+        {field(t('admin.ai.apiKey'), 'apiKey', 'password', t('admin.ai.apiKeyPh'))}
+        {field(t('admin.ai.model'), 'model', 'text', t('admin.ai.modelPh'))}
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>{t('admin.ai.features')}</div>
+          {toggle(t('admin.ai.featureCompose'), form.features.compose, () => setForm(f => ({ ...f, features: { ...f.features, compose: !f.features.compose } })))}
+          {toggle(t('admin.ai.featureSummarize'), form.features.summarize, () => setForm(f => ({ ...f, features: { ...f.features, summarize: !f.features.summarize } })))}
+        </div>
+
+        {msgBox}
+
+        <button type="submit" disabled={saving || !form.baseUrl || !form.model}
+          style={{ padding: '8px 18px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 500, cursor: 'pointer', opacity: (saving || !form.baseUrl || !form.model) ? 0.5 : 1 }}>
+          {saving ? t('common.saving') : t('common.save')}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 // ─── System Email Section ─────────────────────────────────────────────────────
 function SystemEmailSection() {
   const { t } = useTranslation();
@@ -4743,7 +4883,7 @@ function RulesAndBlockListTab({ initialSubTab }) {
 const TAB_GROUPS = [
   { id: 'account-mail', labelKey: 'admin.tabs.groupAccountMail', tabIds: ['accounts', 'notifications', 'rules'] },
   { id: 'display', labelKey: 'admin.tabs.groupDisplay', tabIds: ['appearance', 'shortcuts'] },
-  { id: 'security-integrations', labelKey: 'admin.tabs.groupSecurityIntegrations', tabIds: ['security', 'integrations'] },
+  { id: 'security-integrations', labelKey: 'admin.tabs.groupSecurityIntegrations', tabIds: ['security', 'integrations', 'ai'] },
   { id: 'admin', labelKey: 'admin.tabs.groupAdmin', tabIds: ['users', 'sso'] },
 ];
 
@@ -4779,6 +4919,11 @@ const TABS = [
   {
     id: 'integrations', labelKey: 'admin.tabs.integrations',
     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><circle cx="12" cy="12" r="3"/><path d="M6.343 6.343a8 8 0 000 11.314M17.657 6.343a8 8 0 010 11.314M3 12h1m16 0h1M12 3v1m0 16v1"/></svg>,
+  },
+  {
+    id: 'ai', labelKey: 'admin.tabs.ai',
+    adminOnly: true,
+    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/><path d="M5 3v4M19 17v4M3 5h4M17 19h4"/></svg>,
   },
   // Admin
   {
@@ -6143,6 +6288,7 @@ function makeSearchIndex(t) {
     { label: t('admin.appearance.typography'), keywords: ['font', 'typography', 'typeface', 'serif', 'sans', 'monospace', 'reading font'], tab: 'appearance', subtab: 'fonts', breadcrumb: fontsCrumb },
     // Integrations
     { label: t('admin.integrations.microsoft.title'), keywords: ['microsoft', 'outlook', '365', 'oauth', 'azure', 'client id', 'tenant', 'ms365', 'office'], tab: 'integrations', breadcrumb: tabLabel('integrations') },
+    { label: t('admin.ai.title'), keywords: ['ai', 'artificial intelligence', 'chatgpt', 'ollama', 'llm', 'language model', 'summarize', 'draft', 'compose assistant', 'openai', 'local ai', 'inference', 'gpt'], tab: 'ai', adminOnly: true, breadcrumb: tabLabel('ai') },
     // Security
     { label: t('admin.security.totpTitle'), keywords: ['2fa', 'totp', 'authenticator', 'two factor', 'otp', 'two-factor', 'mfa', 'security code'], tab: 'security', subtab: 'security', breadcrumb: secCrumb },
     { label: t('admin.security.ssoTitle'), keywords: ['sso', 'linked', 'identity', 'provider', 'link', 'unlink', 'oidc', 'connect identity'], tab: 'security', subtab: 'security', breadcrumb: secCrumb },
@@ -6272,6 +6418,7 @@ export default function AdminPanel() {
       {adminTab === 'security' && <SecurityPrivacyTab initialSubTab={pendingSubTab} />}
       {adminTab === 'notifications' && <NotificationsTab />}
       {adminTab === 'shortcuts' && !isMobile && <ShortcutsTab />}
+      {adminTab === 'ai' && <AISection />}
       {adminTab === 'about' && <AboutTab />}
     </>
   );

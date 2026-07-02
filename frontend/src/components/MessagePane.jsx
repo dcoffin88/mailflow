@@ -162,6 +162,11 @@ export default function MessagePane() {
     if (iframeRef.current) iframeRef.current.style.height = '300px';
   }, [selectedMessageId]);
 
+  useEffect(() => {
+    setAiSummary(null);
+    aiSummarizeAbortRef.current?.abort();
+  }, [selectedMessageId]);
+
   const allMessages = searchQuery.trim() ? searchResults : messages;
   const message = allMessages.find(m => m.id === selectedMessageId)
     ?? Object.values(threadMessages).flat().find(m => m.id === selectedMessageId);
@@ -234,8 +239,11 @@ export default function MessagePane() {
   const [movePickerLoading, setMovePickerLoading] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showTodoistModal, setShowTodoistModal] = useState(false);
+  const [aiStatus, setAiStatus] = useState(null);
+  const [aiSummary, setAiSummary] = useState(null);
   const moveBtnRef = useRef(null);
   const moreMenuRef = useRef(null);
+  const aiSummarizeAbortRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const iframeRef = useRef(null);
   const roRef = useRef(null);
@@ -885,6 +893,60 @@ ${bodyContent}
     win.print();
   };
 
+  const handleSummarize = async () => {
+    const textContent = body?.text
+      || body?.html?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+      || '';
+    if (!textContent) return;
+    aiSummarizeAbortRef.current?.abort();
+    const ctrl = new AbortController();
+    aiSummarizeAbortRef.current = ctrl;
+    setAiSummary({ status: 'loading', text: '' });
+    try {
+      const res = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        signal: ctrl.signal,
+        body: JSON.stringify({
+          messages: [{
+            role: 'user',
+            content: `Summarize this email concisely in 2-4 sentences. Focus on the key points and any action items.\n\n${textContent.slice(0, 6000)}`,
+          }],
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        setAiSummary({ status: 'error', text: err.error || res.statusText });
+        return;
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let lineBuf = '';
+      let fullText = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        lineBuf += decoder.decode(value, { stream: true });
+        const lines = lineBuf.split('\n');
+        lineBuf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const chunk = line.slice(6).trim();
+          if (chunk === '[DONE]') break;
+          try {
+            const delta = JSON.parse(chunk)?.choices?.[0]?.delta?.content;
+            if (delta) { fullText += delta; setAiSummary({ status: 'loading', text: fullText }); }
+          } catch { /* skip */ }
+        }
+      }
+      setAiSummary({ status: 'done', text: fullText || '' });
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      setAiSummary({ status: 'error', text: err.message });
+    }
+  };
+
   // Keep pane action refs current every render
   paneActionsRef.current = {
     reply:      () => handleReply(defaultReplyAll),
@@ -917,6 +979,11 @@ ${bodyContent}
       shortcutBus.off('printMessage',  onPrintMessage);
     };
   }, []);
+
+  useEffect(() => {
+    api.ai.status().then(setAiStatus).catch(() => {});
+    return () => { aiSummarizeAbortRef.current?.abort(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDownload = async (messageId, part, filename) => {
     setDownloadingPart(part);
@@ -1563,7 +1630,7 @@ ${bodyContent}
                 </div>
                 <div
                   onClick={() => { handlePrint(); setShowMoreMenu(false); }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)' }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)', borderBottom: aiStatus?.enabled && aiStatus?.features?.summarize && body ? '1px solid var(--border-subtle)' : 'none' }}
                   onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
@@ -1574,6 +1641,20 @@ ${bodyContent}
                   </svg>
                   {t('message.print')}
                 </div>
+                {aiStatus?.enabled && aiStatus?.features?.summarize && body && (
+                  <div
+                    onClick={() => { handleSummarize(); setShowMoreMenu(false); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 14px', cursor: 'pointer', fontSize: 13, color: 'var(--text-primary)' }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                      <path d="M5 3v4M19 17v4M3 5h4M17 19h4"/>
+                    </svg>
+                    {t('message.summarize')}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1624,6 +1705,15 @@ ${bodyContent}
                 <rect x="6" y="14" width="12" height="8"/>
               </svg>
             </PaneBtn>
+            {aiStatus?.enabled && aiStatus?.features?.summarize && body && (
+              <PaneBtn onClick={handleSummarize} title={t('message.summarize')}
+                style={aiSummary ? { color: 'var(--accent)' } : {}}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                  <path d="M5 3v4M19 17v4M3 5h4M17 19h4"/>
+                </svg>
+              </PaneBtn>
+            )}
           </>
         )}
 
@@ -1846,6 +1936,37 @@ ${bodyContent}
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* AI summary panel */}
+        {aiSummary && (
+          <div style={{
+            marginBottom: 16,
+            padding: '12px 16px',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
+            borderLeft: '3px solid var(--accent)',
+            borderRadius: 8,
+            fontSize: 13, lineHeight: 1.55, color: 'var(--text-primary)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {t('message.summary')}
+              </span>
+              <button onClick={() => setAiSummary(null)} style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                color: 'var(--text-tertiary)', padding: '2px 4px', fontSize: 14, lineHeight: 1,
+              }}>×</button>
+            </div>
+            {aiSummary.status === 'loading' && !aiSummary.text && (
+              <span style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>{t('compose.toolbar.aiGenerating')}</span>
+            )}
+            {aiSummary.status === 'error' ? (
+              <span style={{ color: 'var(--red)' }}>{t('compose.toolbar.aiError', { message: aiSummary.text })}</span>
+            ) : (
+              <span>{aiSummary.text}</span>
+            )}
           </div>
         )}
 

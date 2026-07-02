@@ -211,6 +211,15 @@ export const api = {
   addToBlockList:        (email) => request('POST',   '/block-list', { emailAddress: email }),
   removeFromBlockList:   (id)    => request('DELETE', `/block-list/${id}`),
 
+  // AI assistant
+  ai: {
+    getConfig: () => request('GET', '/admin/ai'),
+    saveConfig: (data) => request('PATCH', '/admin/ai', data),
+    deleteConfig: () => request('DELETE', '/admin/ai'),
+    test: () => request('POST', '/admin/ai/test'),
+    status: () => request('GET', '/ai/status'),
+  },
+
   // Todoist integration
   todoist: {
     status:       ()       => request('GET',    '/todoist/status'),

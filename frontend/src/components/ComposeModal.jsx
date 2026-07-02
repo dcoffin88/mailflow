@@ -274,6 +274,9 @@ export default function ComposeModal() {
   const [showReplyType, setShowReplyType] = useState(false);
   const [htmlMode, setHtmlMode] = useState(false);
   const [htmlSource, setHtmlSource] = useState('');
+  const [aiStatus, setAiStatus] = useState(null);
+  const [aiPanel, setAiPanel] = useState(null);
+  const aiAbortRef = useRef(null);
   const replyTypeRef = useRef(null);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -412,6 +415,11 @@ export default function ComposeModal() {
     }
     return () => { meta.content = original; };
   }, [isMobile]);
+
+  useEffect(() => {
+    api.ai.status().then(setAiStatus).catch(() => {});
+    return () => { aiAbortRef.current?.abort(); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Position cursor at top for replies/forwards
   useEffect(() => {
@@ -615,6 +623,96 @@ export default function ComposeModal() {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const handleAiAction = async (action) => {
+    aiAbortRef.current?.abort();
+    const controller = new AbortController();
+    aiAbortRef.current = controller;
+
+    const currentText = plaintextEmail ? body
+      : (htmlMode ? htmlSource.replace(/<[^>]+>/g, ' ') : (editor?.getText() ?? ''));
+
+    const toStr = [...toChips, ...(toInput.trim() ? [toInput.trim()] : [])].join(', ');
+    const PROMPTS = {
+      draft: {
+        system: 'You are a professional email writing assistant. Write a complete, well-structured email based on the provided subject and recipient context. Return only the email body text. Use plain text with no markdown or HTML. Use double newlines between paragraphs.',
+        user: `Subject: ${subject || '(none)'}\nTo: ${toStr || '(none)'}\n\nWrite a complete professional email.`,
+      },
+      improve: {
+        system: 'You are a professional email writing assistant. Improve the following email for clarity, tone, and professionalism. Return only the improved email body text. Use plain text with no markdown or HTML.',
+        user: currentText.trim() || '(empty)',
+      },
+      shorten: {
+        system: 'You are a professional email writing assistant. Shorten the following email while preserving all key information. Return only the shortened email body text. Use plain text with no markdown or HTML.',
+        user: currentText.trim() || '(empty)',
+      },
+      grammar: {
+        system: 'You are a professional email writing assistant. Fix the grammar, spelling, and punctuation in the following email without changing its meaning. Return only the corrected text. Use plain text with no markdown or HTML.',
+        user: currentText.trim() || '(empty)',
+      },
+    };
+    const { system, user } = PROMPTS[action] || PROMPTS.draft;
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'user', content: user.slice(0, 16000) },
+    ];
+
+    setAiPanel({ action, status: 'generating', text: '' });
+
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'AI request failed' }));
+        setAiPanel(p => ({ ...p, status: 'error', text: err.error || 'AI request failed' }));
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') { reader.cancel(); break; }
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta?.content ?? '';
+            if (delta) {
+              fullText += delta;
+              setAiPanel(p => p ? { ...p, text: fullText } : p);
+            }
+          } catch { /* skip malformed SSE line */ }
+        }
+      }
+      setAiPanel(p => p ? { ...p, status: 'done' } : p);
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        setAiPanel(p => p ? { ...p, status: 'error', text: err.message } : p);
+      }
+    }
+  };
+
+  const applyAiText = () => {
+    if (!aiPanel?.text || !editor) return;
+    const html = '<p>' + aiPanel.text.trim().replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>') + '</p>';
+    editor.commands.setContent(html);
+    setAiPanel(null);
   };
 
   const handleSend = async ({ skipSubjectWarn = false, skipAttachWarn = false } = {}) => {
@@ -1684,7 +1782,43 @@ export default function ComposeModal() {
           if (!htmlMode) { setHtmlSource(editor?.getHTML() ?? ''); setHtmlMode(true); }
           else { editor?.commands.setContent(htmlSource, false); setHtmlMode(false); }
         }}
+        aiEnabled={!htmlMode && aiStatus?.enabled && aiStatus?.features?.compose}
+        onAiAction={handleAiAction}
+        aiPanelOpen={!!aiPanel}
       />}
+      {aiPanel && !plaintextEmail && !htmlMode && (
+        <div style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)', padding: '10px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>{t('compose.toolbar.aiPanelTitle')}</span>
+            <button
+              onClick={() => { aiAbortRef.current?.abort(); setAiPanel(null); }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 16, lineHeight: 1, padding: '0 2px' }}
+            >×</button>
+          </div>
+          {aiPanel.status === 'generating' && !aiPanel.text && (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{t('compose.toolbar.aiGenerating')}</div>
+          )}
+          {aiPanel.status === 'error' ? (
+            <div style={{ fontSize: 12, color: 'var(--red)' }}>{t('compose.toolbar.aiError', { message: aiPanel.text })}</div>
+          ) : (
+            <div style={{ fontSize: 13, color: 'var(--text-primary)', whiteSpace: 'pre-wrap', maxHeight: 160, overflowY: 'auto', lineHeight: 1.5 }}>
+              {aiPanel.text}
+            </div>
+          )}
+          {aiPanel.status === 'done' && (
+            <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+              <button
+                onClick={applyAiText}
+                style={{ fontSize: 12, padding: '5px 14px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 500 }}
+              >{t('compose.toolbar.aiApply')}</button>
+              <button
+                onClick={() => setAiPanel(null)}
+                style={{ fontSize: 12, padding: '5px 14px', background: 'none', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-secondary)', cursor: 'pointer' }}
+              >{t('compose.toolbar.aiDismiss')}</button>
+            </div>
+          )}
+        </div>
+      )}
       {fwdAttachments.length > 0 && (
         <AttachmentChips attachments={fwdAttachments.map(a => ({ name: a.filename, size: a.size }))} onRemove={i => setFwdAttachments(prev => prev.filter((_, j) => j !== i))} />
       )}
@@ -2102,9 +2236,12 @@ function Sep() {
   return <span style={{ width: 1, background: 'var(--border-subtle)', margin: '2px 4px', alignSelf: 'stretch' }} />;
 }
 
-function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml, isMobile }) {
+function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml, isMobile, aiEnabled, onAiAction, aiPanelOpen }) {
   const { t } = useTranslation();
   const savedSelectionRef = useRef(null);
+  const [aiMenuPos, setAiMenuPos] = useState(null);
+  const aiBtnRef = useRef(null);
+  const aiMenuRef = useRef(null);
   const [colorPos, setColorPos] = useState(null);
   const [highlightPos, setHighlightPos] = useState(null);
   const [emojiPos, setEmojiPos] = useState(null);
@@ -2135,13 +2272,14 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml, 
   }, [linkPos]);
 
   useEffect(() => {
-    if (!colorPos && !highlightPos && !emojiPos && !linkPos && !tablePos) return;
+    if (!colorPos && !highlightPos && !emojiPos && !linkPos && !tablePos && !aiMenuPos) return;
     const handler = (e) => {
       if (colorPos && colorBtnRef.current && !colorBtnRef.current.contains(e.target) && colorPopRef.current && !colorPopRef.current.contains(e.target)) setColorPos(null);
       if (highlightPos && highlightBtnRef.current && !highlightBtnRef.current.contains(e.target) && highlightPopRef.current && !highlightPopRef.current.contains(e.target)) setHighlightPos(null);
       if (emojiPos && emojiBtnRef.current && !emojiBtnRef.current.contains(e.target) && emojiPopRef.current && !emojiPopRef.current.contains(e.target)) setEmojiPos(null);
       if (linkPos && linkBtnRef.current && !linkBtnRef.current.contains(e.target) && linkPopRef.current && !linkPopRef.current.contains(e.target)) setLinkPos(null);
       if (tablePos && tableBtnRef.current && !tableBtnRef.current.contains(e.target) && tablePopRef.current && !tablePopRef.current.contains(e.target)) setTablePos(null);
+      if (aiMenuPos && aiBtnRef.current && !aiBtnRef.current.contains(e.target) && aiMenuRef.current && !aiMenuRef.current.contains(e.target)) setAiMenuPos(null);
     };
     document.addEventListener('mousedown', handler);
     document.addEventListener('touchstart', handler, { passive: true });
@@ -2149,7 +2287,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml, 
       document.removeEventListener('mousedown', handler);
       document.removeEventListener('touchstart', handler);
     };
-  }, [colorPos, highlightPos, emojiPos, linkPos, tablePos]);
+  }, [colorPos, highlightPos, emojiPos, linkPos, tablePos, aiMenuPos]);
 
   const es = useEditorState({
     editor,
@@ -2431,6 +2569,28 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml, 
           </svg>
         </button>
 
+        {aiEnabled && (
+          <>
+            <Sep />
+            <button ref={aiBtnRef} title={t('compose.toolbar.aiAssist')} onMouseDown={e => {
+              e.preventDefault();
+              if (aiMenuPos) { setAiMenuPos(null); return; }
+              const r = aiBtnRef.current.getBoundingClientRect();
+              const left = Math.max(4, Math.min(r.left, window.innerWidth - 160));
+              setAiMenuPos({ top: r.bottom + 4, left });
+            }} style={{
+              background: (aiMenuPos || aiPanelOpen) ? 'var(--accent-dim)' : 'none', border: 'none', borderRadius: 4,
+              padding: '3px 6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
+              color: (aiMenuPos || aiPanelOpen) ? 'var(--accent)' : 'var(--text-secondary)',
+            }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+                <path d="M5 3v4M19 17v4M3 5h4M17 19h4"/>
+              </svg>
+            </button>
+          </>
+        )}
+
         {onToggleHtml && (
           <>
             <Sep />
@@ -2555,6 +2715,34 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml, 
             fontSize: 11, cursor: 'pointer', padding: 0, textAlign: 'left',
             display: editor.isActive('table') ? 'block' : 'none',
           }}>{t('compose.toolbar.removeTable')}</button>
+        </div>
+      )}
+      {aiMenuPos && (
+        <div ref={aiMenuRef} style={{
+          position: 'fixed', top: aiMenuPos.top, left: aiMenuPos.left, zIndex: 9999,
+          background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+          borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+          padding: '4px 0', minWidth: 148,
+        }}>
+          {[
+            { key: 'draft', label: t('compose.toolbar.aiWriteDraft') },
+            { key: 'improve', label: t('compose.toolbar.aiImprove') },
+            { key: 'shorten', label: t('compose.toolbar.aiShorten') },
+            { key: 'grammar', label: t('compose.toolbar.aiFixGrammar') },
+          ].map(({ key, label }) => (
+            <button key={key} onMouseDown={e => {
+              e.preventDefault();
+              setAiMenuPos(null);
+              onAiAction(key);
+            }} style={{
+              display: 'block', width: '100%', textAlign: 'left',
+              background: 'none', border: 'none', padding: '7px 14px',
+              fontSize: 13, color: 'var(--text-primary)', cursor: 'pointer',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}
+            >{label}</button>
+          ))}
         </div>
       )}
     </>
