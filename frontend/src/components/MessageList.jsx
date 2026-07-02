@@ -109,6 +109,8 @@ export default function MessageList() {
   } = useStore();
 
   const isMobile = useMobile();
+  const isUnified = selectedAccountId === null;
+  const selectedAccount = accounts.find(a => a.id === selectedAccountId);
   const undoableNotifications = notifications.filter(n => n.onUndo);
 
   const currentLayout = LAYOUTS[layout] || LAYOUTS.classic;
@@ -1954,8 +1956,6 @@ export default function MessageList() {
     }
   };
 
-  const isUnified = selectedAccountId === null;
-  const selectedAccount = accounts.find(a => a.id === selectedAccountId);
   const accountColor = selectedAccount?.color || 'currentColor';
   const showInboxIcon = !isUnified && selectedFolder === 'INBOX' && !searchQuery.trim();
 
