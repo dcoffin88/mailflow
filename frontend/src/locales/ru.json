@@ -310,7 +310,14 @@
     "composeAriaLabel": "Написать новое письмо",
     "noAccounts": "Аккаунты не добавлены",
     "noAccountsDesc": "Добавьте почтовый аккаунт, чтобы начать",
-    "foldersHeading": "Папки"
+    "foldersHeading": "Папки",
+    "categories": {
+      "primary": "Основные",
+      "newsletter": "Рассылки",
+      "promotion": "Акции",
+      "automated": "Автоматические",
+      "social": "Соцсети"
+    }
   },
   "lockScreen": {
     "subtitle": "Введите пароль для разблокировки",
@@ -478,6 +485,7 @@
       "fontsAndLanguage": "Язык и шрифт",
       "about": "О приложении",
       "ai": "ИИ-ассистент",
+      "categories": "Категории",
       "groupAccountMail": "Аккаунт и почта",
       "groupDisplay": "Отображение",
       "groupSecurityIntegrations": "Безопасность и интеграции",
@@ -593,7 +601,11 @@
       "reindexProgress": "Проиндексировано {{synced}} / {{total}} сообщений",
       "reindexError": "Не удалось запустить переиндексацию",
       "senderNamePh": "напр. Алиса Смит",
-      "senderName": "Имя отправителя"
+      "senderName": "Имя отправителя",
+      "categorizationSection": "Категоризация почты",
+      "categorizationEnabled": "Включить категоризацию входящих",
+      "categorizationEnabledDesc": "Сортирует входящие письма по вкладкам категорий. По умолчанию отключено.",
+      "enabledGlobally": "Включено глобально"
     },
     "folderMappings": {
       "title": "Сопоставление папок",
@@ -894,6 +906,32 @@
       "testing": "Проверка…",
       "notConfigured": "Провайдер ИИ не настроен.",
       "remove": "Удалить конфигурацию"
+    },
+    "categories": {
+      "title": "Категории почты",
+      "description": "Автоматически сортирует входящие письма по категориям. Включите в настройках каждого аккаунта.",
+      "globalEnabled": "Включить категоризацию глобально",
+      "globalEnabledDesc": "Включает вкладки категорий для всех аккаунтов, включая объединённый входящий.",
+      "sourcesTitle": "Источники для соцсетей",
+      "sourcesDesc": "Добавьте домены или адреса отправителей для классификации как Соцсети. Также доступны встроенные наборы и URL-подписки.",
+      "addManualPh": "напр. twitter.com",
+      "addBtn": "Добавить",
+      "urlSubPh": "https://example.com/social-domains.txt",
+      "urlSubBtn": "Подписаться",
+      "builtinSocial": "Социальные сети",
+      "builtinDev": "Платформы для разработчиков",
+      "domainCount": "{{count}} доменов",
+      "refresh": "Обновить",
+      "noSources": "Источники ещё не добавлены.",
+      "deleteConfirm": "Удалить этот источник?",
+      "fetchedOk": "Обновлено: {{count}} доменов",
+      "addedOk": "Добавлено",
+      "recategorizeTitle": "Перекатегоризировать письма",
+      "recategorizeDesc": "Повторно классифицировать все письма входящих для аккаунта с текущими источниками.",
+      "recategorize": "Перекатегоризировать",
+      "recategorizing": "Обработка…",
+      "recategorized": "Перекатегоризация запущена.",
+      "selectAccount": "Выберите аккаунт"
     },
     "systemEmail": {
       "tabUsers": "Пользователи и приглашения",

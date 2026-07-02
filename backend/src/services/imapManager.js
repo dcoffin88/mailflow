@@ -1,6 +1,7 @@
 import { ImapFlow } from 'imapflow';
 import { query } from './db.js';
 import { parseMessage, snippetFromBody, detectBulkFromParsedHeaders, parseRawHeaders } from './messageParser.js';
+import { classifyMessage, loadSocialDomains, invalidateSocialDomainCache, getGlobalCategorizationEnabled } from './categorizer.js';
 import { refreshMicrosoftToken } from '../routes/oauth.js';
 import { sanitizeEmail } from './emailSanitizer.js';
 import { logger } from './logger.js';
@@ -1170,6 +1171,15 @@ export class ImapManager {
               if (relocated.rows.length > 0) return;
             }
 
+            let msgCategory = null;
+            if (account.categorization_enabled || await getGlobalCategorizationEnabled(account.user_id)) {
+              try {
+                const socialDomains = await loadSocialDomains(account.user_id);
+                msgCategory = classifyMessage(parsed.parsedHeaders, parsed.fromEmail, socialDomains);
+                if (msgCategory === 'primary') msgCategory = null;
+              } catch { /* non-fatal — leave category NULL */ }
+            }
+
             const result = await query(`
               INSERT INTO messages (
                 account_id, uid, folder, message_id, subject,
@@ -1177,8 +1187,8 @@ export class ImapManager {
                 reply_to, in_reply_to,
                 date, snippet, is_read, is_starred, has_attachments, flags,
                 body_html, body_text, attachments,
-                thread_references, thread_id, is_bulk
-              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+                thread_references, thread_id, is_bulk, category
+              ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
               ON CONFLICT (account_id, uid, folder) DO UPDATE
               SET from_name = $6, from_email = $7,
                   to_addresses = $8, cc_addresses = $9,
@@ -1204,7 +1214,8 @@ export class ImapManager {
                   attachments = COALESCE(messages.attachments::text, EXCLUDED.attachments::text)::jsonb,
                   thread_references = COALESCE(messages.thread_references, EXCLUDED.thread_references),
                   thread_id = COALESCE(messages.thread_id, EXCLUDED.thread_id),
-                  is_bulk = COALESCE(messages.is_bulk, EXCLUDED.is_bulk)
+                  is_bulk = COALESCE(messages.is_bulk, EXCLUDED.is_bulk),
+                  category = COALESCE(messages.category, EXCLUDED.category)
               RETURNING id, (xmax = 0) as is_new
             `, [
               account.id, parsed.uid, folder,
@@ -1216,7 +1227,7 @@ export class ImapManager {
               parsed.isRead, parsed.isStarred,
               parsed.hasAttachments, JSON.stringify(parsed.flags),
               sanitizeStr(safeHtml), sanitizeStr(text), JSON.stringify(atts || []),
-              refs, threadId, parsed.isBulk ?? null,
+              refs, threadId, parsed.isBulk ?? null, msgCategory,
             ]);
             if (result.rows[0]?.is_new && !parsed.isRead) {
               newMessages.push({ ...parsed, id: result.rows[0].id, accountId: account.id, folder });
@@ -1615,6 +1626,15 @@ export class ImapManager {
                   if (relocated.rows.length > 0) continue;
                 }
 
+                let bfCategory = null;
+                if (account.categorization_enabled || await getGlobalCategorizationEnabled(account.user_id)) {
+                  try {
+                    const socialDomains = await loadSocialDomains(account.user_id);
+                    bfCategory = classifyMessage(parsed.parsedHeaders, parsed.fromEmail, socialDomains);
+                    if (bfCategory === 'primary') bfCategory = null;
+                  } catch { /* non-fatal */ }
+                }
+
                 await query(`
                   INSERT INTO messages (
                     account_id, uid, folder, message_id, subject,
@@ -1622,8 +1642,8 @@ export class ImapManager {
                     reply_to, in_reply_to,
                     date, snippet, is_read, is_starred, has_attachments, flags,
                     body_html, body_text, attachments,
-                    thread_references, thread_id, is_bulk
-                  ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+                    thread_references, thread_id, is_bulk, category
+                  ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
                   ON CONFLICT (account_id, uid, folder) DO UPDATE
                   SET from_name = $6, from_email = $7,
                       to_addresses = $8, cc_addresses = $9,
@@ -1649,7 +1669,8 @@ export class ImapManager {
                       attachments = COALESCE(messages.attachments::text, EXCLUDED.attachments::text)::jsonb,
                       thread_references = COALESCE(messages.thread_references, EXCLUDED.thread_references),
                       thread_id = COALESCE(messages.thread_id, EXCLUDED.thread_id),
-                      is_bulk = COALESCE(messages.is_bulk, EXCLUDED.is_bulk)
+                      is_bulk = COALESCE(messages.is_bulk, EXCLUDED.is_bulk),
+                      category = COALESCE(messages.category, EXCLUDED.category)
                 `, [
                   account.id, parsed.uid, folder,
                   bfMsgId, sanitizeStr(parsed.subject),
@@ -1660,7 +1681,7 @@ export class ImapManager {
                   parsed.isRead, parsed.isStarred,
                   parsed.hasAttachments, JSON.stringify(parsed.flags),
                   sanitizeStr(safeHtml), sanitizeStr(bodyText), JSON.stringify(atts || []),
-                  bfRefs, bfThreadId, parsed.isBulk ?? null,
+                  bfRefs, bfThreadId, parsed.isBulk ?? null, bfCategory,
                 ]);
                 if (bfThreadId && bfThreadId !== bfMsgId) {
                   await query(

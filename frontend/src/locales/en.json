@@ -310,7 +310,14 @@
     "composeAriaLabel": "Compose new message",
     "noAccounts": "No accounts yet",
     "noAccountsDesc": "Add an email account to get started",
-    "foldersHeading": "Folders"
+    "foldersHeading": "Folders",
+    "categories": {
+      "primary": "Primary",
+      "newsletter": "Newsletters",
+      "promotion": "Promotions",
+      "automated": "Automated",
+      "social": "Social"
+    }
   },
   "lockScreen": {
     "subtitle": "Enter your password to unlock",
@@ -478,6 +485,7 @@
       "fontsAndLanguage": "Language & Font",
       "about": "About",
       "ai": "AI Assistant",
+      "categories": "Categories",
       "groupAccountMail": "Account & Mail",
       "groupDisplay": "Display",
       "groupSecurityIntegrations": "Security & Integrations",
@@ -593,7 +601,11 @@
       "reindex": "Re-index for search",
       "reindexing": "Indexing messages...",
       "reindexProgress": "{{synced}} / {{total}} messages indexed",
-      "reindexError": "Failed to start re-index"
+      "reindexError": "Failed to start re-index",
+      "categorizationSection": "Email Categorization",
+      "categorizationEnabled": "Enable inbox categorization",
+      "categorizationEnabledDesc": "Sort incoming emails into category tabs. Disabled by default.",
+      "enabledGlobally": "Enabled globally"
     },
     "folderMappings": {
       "title": "Folder mappings",
@@ -894,6 +906,32 @@
       "testing": "Testing…",
       "notConfigured": "No AI provider configured yet.",
       "remove": "Remove configuration"
+    },
+    "categories": {
+      "title": "Email Categories",
+      "description": "Automatically sort incoming emails into category tabs. Enable categorization on each account in Accounts settings.",
+      "globalEnabled": "Enable categorization globally",
+      "globalEnabledDesc": "Enables category tabs for all accounts, including the unified inbox.",
+      "sourcesTitle": "Social category sources",
+      "sourcesDesc": "Add sender domains or email addresses to classify as Social. Built-in curated sets and URL subscriptions are also available.",
+      "addManualPh": "e.g. twitter.com",
+      "addBtn": "Add",
+      "urlSubPh": "https://example.com/social-domains.txt",
+      "urlSubBtn": "Subscribe",
+      "builtinSocial": "Social networks",
+      "builtinDev": "Developer platforms",
+      "domainCount": "{{count}} domains",
+      "refresh": "Refresh",
+      "noSources": "No sources added yet.",
+      "deleteConfirm": "Remove this source?",
+      "fetchedOk": "Refreshed: {{count}} domains",
+      "addedOk": "Added",
+      "recategorizeTitle": "Re-categorize messages",
+      "recategorizeDesc": "Re-classify all existing inbox messages for an account using the current sources.",
+      "recategorize": "Re-categorize",
+      "recategorizing": "Processing…",
+      "recategorized": "Re-categorization started.",
+      "selectAccount": "Select account"
     },
     "systemEmail": {
       "tabUsers": "Users & Invites",

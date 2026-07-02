@@ -275,6 +275,18 @@ const SAME_VALUE_ALLOWED = {
   // email placeholder — en and ru share same format
   'admin.security.recoveryEmailPh': [['en', 'ru', 'zhCN']],
 
+  // ── Email categorization ───────────────────────────────────────────────────
+  // URL placeholder — identical in all locales
+  'admin.categories.urlSubPh': 'any',
+  // "Primary" — "Principal" in both es and fr
+  'messageList.categories.primary': [['es', 'fr']],
+  // "Newsletter(s)" — en and fr both use "Newsletters"; de and it both use "Newsletter"
+  'messageList.categories.newsletter': [['en', 'fr'], ['de', 'it']],
+  // "Promotions" — same spelling in en and fr
+  'messageList.categories.promotion': [['en', 'fr']],
+  // "Social" — international term used as-is in en, es, and it
+  'messageList.categories.social': [['en', 'es', 'it']],
+
   // ── Todoist integration ────────────────────────────────────────────────────
   // "Todoist" — brand name, same in all locales
   'admin.integrations.todoist.title': 'any',
@@ -307,11 +319,18 @@ const DYNAMIC_KEYS = new Set([
   'admin.tabs.notifications',
   'admin.tabs.shortcuts',
   'admin.tabs.about',
+  'admin.tabs.categories',
   // t(group.labelKey) — labelKey is a string property set in the TAB_GROUPS array
   'admin.tabs.groupAccountMail',
   'admin.tabs.groupDisplay',
   'admin.tabs.groupSecurityIntegrations',
   'admin.tabs.groupAdmin',
+  // t(`messageList.categories.${cat}`) — category tab labels referenced via template literal
+  'messageList.categories.primary',
+  'messageList.categories.newsletter',
+  'messageList.categories.promotion',
+  'messageList.categories.automated',
+  'messageList.categories.social',
 ]);
 
 // JSX attribute names whose values must never be plain strings — always t().

@@ -310,7 +310,14 @@
     "composeAriaLabel": "撰写新邮件",
     "noAccounts": "暂无账户",
     "noAccountsDesc": "添加邮件账户以开始使用",
-    "foldersHeading": "文件夹"
+    "foldersHeading": "文件夹",
+    "categories": {
+      "primary": "主要",
+      "newsletter": "订阅邮件",
+      "promotion": "促销",
+      "automated": "自动邮件",
+      "social": "社交"
+    }
   },
   "lockScreen": {
     "subtitle": "输入密码以解锁",
@@ -478,6 +485,7 @@
       "fontsAndLanguage": "语言与字体",
       "about": "关于",
       "ai": "AI 助手",
+      "categories": "分类",
       "groupAccountMail": "账户与邮件",
       "groupDisplay": "显示",
       "groupSecurityIntegrations": "安全与集成",
@@ -593,7 +601,11 @@
       "reindex": "重新索引以供搜索",
       "reindexing": "正在索引邮件...",
       "reindexProgress": "已索引 {{synced}} / {{total}} 封邮件",
-      "reindexError": "无法启动重新索引"
+      "reindexError": "无法启动重新索引",
+      "categorizationSection": "邮件分类",
+      "categorizationEnabled": "启用收件箱分类",
+      "categorizationEnabledDesc": "将收到的邮件按类别选项卡分类。默认禁用。",
+      "enabledGlobally": "已全局启用"
     },
     "folderMappings": {
       "title": "文件夹映射",
@@ -894,6 +906,32 @@
       "testing": "测试中…",
       "notConfigured": "尚未配置 AI 提供商。",
       "remove": "删除配置"
+    },
+    "categories": {
+      "title": "邮件类别",
+      "description": "自动将收到的邮件按类别选项卡分类。在各账户设置中启用分类功能。",
+      "globalEnabled": "全局启用分类",
+      "globalEnabledDesc": "为所有账户（包括统一收件箱）启用类别选项卡。",
+      "sourcesTitle": "社交类别来源",
+      "sourcesDesc": "添加发件人域名或地址以归类为社交。还可使用内置合集和URL订阅。",
+      "addManualPh": "例如 twitter.com",
+      "addBtn": "添加",
+      "urlSubPh": "https://example.com/social-domains.txt",
+      "urlSubBtn": "订阅",
+      "builtinSocial": "社交网络",
+      "builtinDev": "开发者平台",
+      "domainCount": "{{count}} 个域名",
+      "refresh": "刷新",
+      "noSources": "尚未添加任何来源。",
+      "deleteConfirm": "确认删除此来源？",
+      "fetchedOk": "已刷新：{{count}} 个域名",
+      "addedOk": "已添加",
+      "recategorizeTitle": "重新分类邮件",
+      "recategorizeDesc": "使用当前来源对账户收件箱中的所有邮件重新分类。",
+      "recategorize": "重新分类",
+      "recategorizing": "处理中…",
+      "recategorized": "重新分类已启动。",
+      "selectAccount": "选择账户"
     },
     "systemEmail": {
       "tabUsers": "用户与邀请",

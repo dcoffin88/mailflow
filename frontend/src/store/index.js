@@ -394,6 +394,12 @@ export const useStore = create((set, get) => ({
     schedulePrefSave({ showFaviconBadge: val });
   },
 
+  categorizationEnabled: false,
+  setCategorizationEnabled: (val) => {
+    set({ categorizationEnabled: val });
+    schedulePrefSave({ categorizationEnabled: val });
+  },
+
   // Layout
   layout: localStorage.getItem('mailflow_layout') || 'classic',
   setLayout: (layout) => {
@@ -634,6 +640,9 @@ export const useStore = create((set, get) => ({
       if (typeof prefs.showFaviconBadge === 'boolean') {
         localStorage.setItem('mailflow_favicon_badge', String(prefs.showFaviconBadge));
         set({ showFaviconBadge: prefs.showFaviconBadge });
+      }
+      if (typeof prefs.categorizationEnabled === 'boolean') {
+        set({ categorizationEnabled: prefs.categorizationEnabled });
       }
     } catch { /* intentional */ }
   },

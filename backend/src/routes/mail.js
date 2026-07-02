@@ -76,9 +76,14 @@ function snippetIsGarbled(s) {
 
 // Get messages (unified or per-account/folder)
 router.get('/messages', async (req, res) => {
-  const { accountId, folder = 'INBOX', limit = 50, offset = 0, unreadOnly, threaded } = req.query;
+  const { accountId, folder = 'INBOX', limit = 50, offset = 0, unreadOnly, threaded, category } = req.query;
 
   if (!isValidFolderName(folder)) return res.status(400).json({ error: 'Invalid folder name' });
+
+  // Validate category param — only allow known values to prevent SQL injection via the
+  // WHERE clause in listMessages (even though it uses parameterised queries, belt-and-suspenders).
+  const VALID_CATEGORIES = new Set(['primary', 'newsletter', 'promotion', 'automated', 'social']);
+  const safeCategory = VALID_CATEGORIES.has(category) ? category : undefined;
 
   const { messages, total, threaded: isThreaded, resolvedAccountId } = await listMessages({
     userId: req.session.userId,
@@ -88,6 +93,7 @@ router.get('/messages', async (req, res) => {
     offset,
     unreadOnly,
     threaded,
+    category: safeCategory,
   });
 
   if (resolvedAccountId && messages.length) {

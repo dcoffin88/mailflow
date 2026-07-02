@@ -105,6 +105,7 @@ export default function MessageList() {
     hoverQuickActions,
     swipeActions,
     folders, favoriteFolders, addFavoriteFolder, removeFavoriteFolder, setSelectedAccount,
+    categorizationEnabled,
   } = useStore();
 
   const isMobile = useMobile();
@@ -131,6 +132,7 @@ export default function MessageList() {
   }, []);
 
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('primary');
   const [currentPage, setCurrentPage] = useState(1);
   const currentPageRef = useRef(1);
   const [syncing, setSyncing] = useState(false);
@@ -169,6 +171,7 @@ export default function MessageList() {
   const layoutPickerRef = useRef(null);
 
   useEffect(() => { currentPageRef.current = currentPage; }, [currentPage]);
+  useEffect(() => { setActiveCategory('primary'); }, [selectedAccountId, selectedFolder]);
   const searchTimer = useRef(null);
   const searchSeq = useRef(0);
 
@@ -239,6 +242,7 @@ export default function MessageList() {
         }
         if (unreadOnly) params.unreadOnly = 'true';
         if (threadedView) params.threaded = 'true';
+        if (selectedFolder === 'INBOX' && (categorizationEnabled || selectedAccount?.categorization_enabled)) params.category = activeCategory;
         const data = await api.getMessages(params);
         if (cancelled) return;
         setMessagesTotal(data.total);
@@ -265,7 +269,7 @@ export default function MessageList() {
     };
     run();
     return () => { cancelled = true; };
-  }, [selectedAccountId, selectedFolder, unreadOnly, pageSize, scrollMode, accountsReady, accounts.length, messagesRefreshToken, threadedView, applyReadGuard, setHasMoreMessages, setLoadingMessages, setMessages, setMessagesOffset, setMessagesTotal]);
+  }, [selectedAccountId, selectedFolder, unreadOnly, activeCategory, pageSize, scrollMode, accountsReady, accounts.length, messagesRefreshToken, threadedView, categorizationEnabled, selectedAccount?.categorization_enabled, applyReadGuard, setHasMoreMessages, setLoadingMessages, setMessages, setMessagesOffset, setMessagesTotal]);
 
   // Load next page (called by scroll or button)
   const loadMore = useCallback(async () => {
@@ -281,6 +285,7 @@ export default function MessageList() {
       }
       if (unreadOnly) params.unreadOnly = 'true';
       if (useStore.getState().threadedView) params.threaded = 'true';
+      if (selectedFolder === 'INBOX' && (categorizationEnabled || selectedAccount?.categorization_enabled)) params.category = activeCategory;
       const data = await api.getMessages(params);
       appendMessages(applyReadGuard(data.messages));
       setMessagesOffset(currentOffset + data.messages.length);
@@ -290,7 +295,7 @@ export default function MessageList() {
     } finally {
       setLoadingMessages(false);
     }
-  }, [selectedAccountId, selectedFolder, unreadOnly, pageSize, loadingMessages, hasMoreMessages, applyReadGuard, appendMessages, setHasMoreMessages, setLoadingMessages, setMessagesOffset]);
+  }, [selectedAccountId, selectedFolder, unreadOnly, activeCategory, pageSize, loadingMessages, hasMoreMessages, categorizationEnabled, selectedAccount?.categorization_enabled, applyReadGuard, appendMessages, setHasMoreMessages, setLoadingMessages, setMessagesOffset]);
 
   // Listen for backfill refresh events from WebSocket
   useEffect(() => {
@@ -313,6 +318,7 @@ export default function MessageList() {
             if (selectedAccountId) { params.accountId = selectedAccountId; params.folder = selectedFolder; }
             if (unreadOnly) params.unreadOnly = 'true';
             if (state.threadedView) params.threaded = 'true';
+            if (selectedFolder === 'INBOX' && (categorizationEnabled || selectedAccount?.categorization_enabled)) params.category = activeCategory;
             const data = await api.getMessages(params);
             setMessagesTotal(data.total);
             // If the unread filter is on and the currently open message was just marked
@@ -337,7 +343,7 @@ export default function MessageList() {
     };
     window.addEventListener('mailflow:refresh', handler);
     return () => window.removeEventListener('mailflow:refresh', handler);
-  }, [selectedAccountId, selectedFolder, unreadOnly, searchQuery, applyReadGuard, setHasMoreMessages, setMessages, setMessagesOffset, setMessagesTotal]);
+  }, [selectedAccountId, selectedFolder, unreadOnly, activeCategory, searchQuery, categorizationEnabled, selectedAccount?.categorization_enabled, applyReadGuard, setHasMoreMessages, setMessages, setMessagesOffset, setMessagesTotal]);
 
   // Search
   const SEARCH_PAGE = 50;
@@ -412,6 +418,7 @@ export default function MessageList() {
       if (selectedAccountId) { params.accountId = selectedAccountId; params.folder = selectedFolder; }
       if (unreadOnly) params.unreadOnly = 'true';
       if (threadedView) params.threaded = 'true';
+      if (selectedFolder === 'INBOX' && (categorizationEnabled || selectedAccount?.categorization_enabled)) params.category = activeCategory;
       const data = await api.getMessages(params);
       setMessagesTotal(data.total);
       setMessages(applyReadGuard(data.messages));
@@ -424,7 +431,7 @@ export default function MessageList() {
     } finally {
       setLoadingMessages(false);
     }
-  }, [selectedAccountId, selectedFolder, unreadOnly, pageSize, loadingMessages, threadedView, applyReadGuard, setExpandedThreadId, setHasMoreMessages, setLoadingMessages, setMessages, setMessagesOffset, setMessagesTotal]);
+  }, [selectedAccountId, selectedFolder, unreadOnly, activeCategory, pageSize, loadingMessages, threadedView, applyReadGuard, setExpandedThreadId, setHasMoreMessages, setLoadingMessages, setMessages, setMessagesOffset, setMessagesTotal]);
 
   const handleSync = async () => {
     if (syncing) return;
@@ -2541,6 +2548,34 @@ export default function MessageList() {
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Category tabs — shown in INBOX when categorization is enabled (globally or per-account) */}
+      {(categorizationEnabled || (!isUnified && selectedAccount?.categorization_enabled)) && selectedFolder === 'INBOX' && !searchQuery.trim() && (
+        <div style={{
+          display: 'flex', borderBottom: '1px solid var(--border-subtle)',
+          overflowX: 'auto', flexShrink: 0,
+          background: 'var(--bg-secondary)',
+          scrollbarWidth: 'none',
+        }}>
+          {['primary', 'newsletter', 'promotion', 'automated', 'social'].map(cat => (
+            <button
+              key={cat}
+              onClick={() => setActiveCategory(cat)}
+              style={{
+                padding: '8px 14px', background: 'none', border: 'none',
+                borderBottom: `2px solid ${activeCategory === cat ? 'var(--accent)' : 'transparent'}`,
+                color: activeCategory === cat ? 'var(--accent)' : 'var(--text-secondary)',
+                cursor: 'pointer', fontSize: 12, fontWeight: activeCategory === cat ? 600 : 400,
+                whiteSpace: 'nowrap', flexShrink: 0,
+                transition: 'color 0.15s, border-color 0.15s',
+                marginBottom: -1,
+              }}
+            >
+              {t(`messageList.categories.${cat}`)}
+            </button>
+          ))}
         </div>
       )}
 

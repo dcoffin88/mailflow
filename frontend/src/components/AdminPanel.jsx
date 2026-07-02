@@ -52,13 +52,14 @@ function isMicrosoftImapHost(host) {
 
 function AccountForm({ initial, onSave, onCancel }) {
   const { t } = useTranslation();
+  const { categorizationEnabled } = useStore();
 
   const isEdit = !!initial?.id;
   const [form, setForm] = useState(initial || {
     name: '', email_address: '', color: '#6366f1', protocol: 'imap',
     imap_host: '', imap_port: 993, imap_skip_tls_verify: false,
     smtp_host: '', smtp_port: 587, smtp_tls: 'STARTTLS',
-    auth_user: '', auth_pass: '',
+    auth_user: '', auth_pass: '', categorization_enabled: false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -289,6 +290,41 @@ function AccountForm({ initial, onSave, onCancel }) {
         onChange={val => set('signature', val)}
       />
 
+      {isEdit && (
+        <>
+          <div style={{ height: 1, background: 'var(--border-subtle)', margin: '16px 0' }} />
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            {t('admin.accounts.categorizationSection')}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, opacity: categorizationEnabled ? 0.5 : 1 }}>
+            <button
+              type="button"
+              disabled={categorizationEnabled}
+              onClick={() => !categorizationEnabled && set('categorization_enabled', !form.categorization_enabled)}
+              style={{
+                width: 36, height: 20, borderRadius: 10, border: 'none',
+                cursor: categorizationEnabled ? 'not-allowed' : 'pointer', padding: 0,
+                background: (categorizationEnabled || form.categorization_enabled) ? 'var(--accent)' : 'var(--bg-elevated)',
+                position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginTop: 1,
+              }}
+            >
+              <span style={{
+                position: 'absolute', top: 2,
+                left: (categorizationEnabled || form.categorization_enabled) ? 18 : 2,
+                width: 16, height: 16,
+                borderRadius: '50%', background: 'white', transition: 'left 0.2s',
+              }} />
+            </button>
+            <div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('admin.accounts.categorizationEnabled')}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                {categorizationEnabled ? t('admin.accounts.enabledGlobally') : t('admin.accounts.categorizationEnabledDesc')}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {error && (
         <div style={{
           padding: '10px 14px', background: 'rgba(248,113,113,0.1)',
@@ -347,7 +383,7 @@ function AccountsTab() {
   };
 
   const handleEdit = async (form) => {
-    const updates = { name: form.name, sender_name: form.sender_name || null, color: form.color, imap_host: form.imap_host, imap_port: form.imap_port, imap_skip_tls_verify: !!form.imap_skip_tls_verify, smtp_host: form.smtp_host, smtp_port: form.smtp_port, smtp_tls: form.smtp_tls, signature: form.signature || null };
+    const updates = { name: form.name, sender_name: form.sender_name || null, color: form.color, imap_host: form.imap_host, imap_port: form.imap_port, imap_skip_tls_verify: !!form.imap_skip_tls_verify, smtp_host: form.smtp_host, smtp_port: form.smtp_port, smtp_tls: form.smtp_tls, signature: form.signature || null, categorization_enabled: !!form.categorization_enabled };
     if (form.auth_pass) updates.auth_pass = form.auth_pass;
     if (form.auth_user) updates.auth_user = form.auth_user;
     await api.updateAccount(editTarget.id, updates);
@@ -3057,6 +3093,261 @@ function AISection() {
   );
 }
 
+// ─── Categories Section ───────────────────────────────────────────────────────
+function CategoriesSection() {
+  const { t } = useTranslation();
+  const { accounts, categorizationEnabled, setCategorizationEnabled } = useStore();
+  const [sources, setSources] = useState([]);
+  const [builtinSets, setBuiltinSets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [manualInput, setManualInput] = useState('');
+  const [urlInput, setUrlInput] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState('');
+  const [msg, setMsg] = useState(null);
+  const [recatAccount, setRecatAccount] = useState('');
+  const [recategorizing, setRecategorizing] = useState(false);
+
+  useEffect(() => {
+    api.categories.getSources()
+      .then(({ sources: s, builtinSets: bs }) => { setSources(s); setBuiltinSets(bs); })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
+
+  const enabledAccounts = categorizationEnabled ? accounts : accounts.filter(a => a.categorization_enabled);
+  const addedBuiltins = new Set(sources.filter(s => s.source_type === 'builtin').map(s => s.value));
+
+  const handleAddManual = async (e) => {
+    e.preventDefault();
+    if (!manualInput.trim()) return;
+    setAdding(true); setAddError('');
+    try {
+      const { source } = await api.categories.addSource({ sourceType: 'manual', value: manualInput.trim() });
+      setSources(prev => [...prev, source]);
+      setManualInput('');
+      setMsg({ type: 'ok', text: t('admin.categories.addedOk') });
+    } catch (err) { setAddError(err.message); }
+    finally { setAdding(false); }
+  };
+
+  const handleAddBuiltin = async (setName) => {
+    setAdding(true); setAddError('');
+    try {
+      const { source } = await api.categories.addSource({ sourceType: 'builtin', value: setName });
+      setSources(prev => [...prev, source]);
+      setMsg({ type: 'ok', text: t('admin.categories.addedOk') });
+    } catch (err) { setAddError(err.message); }
+    finally { setAdding(false); }
+  };
+
+  const handleAddUrl = async (e) => {
+    e.preventDefault();
+    if (!urlInput.trim()) return;
+    setAdding(true); setAddError('');
+    try {
+      const { source } = await api.categories.addSource({ sourceType: 'url', value: urlInput.trim() });
+      setSources(prev => [...prev, source]);
+      setUrlInput('');
+      setMsg({ type: 'ok', text: t('admin.categories.addedOk') });
+    } catch (err) { setAddError(err.message); }
+    finally { setAdding(false); }
+  };
+
+  const handleToggle = async (id, enabled) => {
+    try {
+      const { source } = await api.categories.toggleSource(id, enabled);
+      setSources(prev => prev.map(s => s.id === id ? source : s));
+    } catch (err) { setMsg({ type: 'error', text: err.message }); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm(t('admin.categories.deleteConfirm'))) return;
+    try {
+      await api.categories.deleteSource(id);
+      setSources(prev => prev.filter(s => s.id !== id));
+    } catch (err) { setMsg({ type: 'error', text: err.message }); }
+  };
+
+  const handleRefresh = async (id) => {
+    try {
+      const { domainCount, error } = await api.categories.refreshSource(id);
+      setSources(prev => prev.map(s => s.id === id ? { ...s, domain_count: domainCount, last_fetched_at: new Date().toISOString() } : s));
+      setMsg(error
+        ? { type: 'error', text: error }
+        : { type: 'ok', text: t('admin.categories.fetchedOk', { count: domainCount }) });
+    } catch (err) { setMsg({ type: 'error', text: err.message }); }
+  };
+
+  const handleRecategorize = async () => {
+    if (!recatAccount) return;
+    setRecategorizing(true);
+    try {
+      await api.categories.recategorize(recatAccount);
+      setMsg({ type: 'ok', text: t('admin.categories.recategorized') });
+    } catch (err) { setMsg({ type: 'error', text: err.message }); }
+    finally { setRecategorizing(false); }
+  };
+
+  const msgBox = msg && (
+    <div style={{ padding: '8px 12px', borderRadius: 6, marginBottom: 14, fontSize: 13,
+      background: msg.type === 'ok' ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)',
+      color: msg.type === 'ok' ? 'var(--green)' : 'var(--red)',
+      border: `1px solid ${msg.type === 'ok' ? 'rgba(74,222,128,0.2)' : 'rgba(248,113,113,0.2)'}`,
+    }}>{msg.text}</div>
+  );
+
+  const inputStyle = { width: '100%', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', color: 'var(--text-primary)', fontSize: 13, boxSizing: 'border-box' };
+
+  if (loading) return <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>{t('common.loading')}</div>;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 20 }}>
+        <button
+          type="button"
+          onClick={() => setCategorizationEnabled(!categorizationEnabled)}
+          style={{
+            width: 36, height: 20, borderRadius: 10, border: 'none', cursor: 'pointer', padding: 0,
+            background: categorizationEnabled ? 'var(--accent)' : 'var(--bg-elevated)',
+            position: 'relative', transition: 'background 0.2s', flexShrink: 0, marginTop: 1,
+          }}
+        >
+          <span style={{
+            position: 'absolute', top: 2, left: categorizationEnabled ? 18 : 2, width: 16, height: 16,
+            borderRadius: '50%', background: 'white', transition: 'left 0.2s',
+          }} />
+        </button>
+        <div>
+          <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{t('admin.categories.globalEnabled')}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{t('admin.categories.globalEnabledDesc')}</div>
+        </div>
+      </div>
+
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 0, marginBottom: 20 }}>
+        {t('admin.categories.description')}
+      </p>
+
+      {msgBox}
+
+      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 8 }}>
+        {t('admin.categories.sourcesTitle')}
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 0, marginBottom: 14 }}>
+        {t('admin.categories.sourcesDesc')}
+      </p>
+
+      {sources.length > 0 ? (
+        <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {sources.map(s => (
+            <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 7 }}>
+              <span style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', minWidth: 46, flexShrink: 0 }}>{s.source_type}</span>
+              <span style={{ flex: 1, fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label || s.value}</span>
+              {s.source_type === 'url' && s.domain_count != null && (
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)', flexShrink: 0 }}>
+                  {t('admin.categories.domainCount', { count: s.domain_count })}
+                </span>
+              )}
+              {s.source_type === 'url' && (
+                <button onClick={() => handleRefresh(s.id)} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', fontSize: 11, padding: '2px 6px', flexShrink: 0 }}>
+                  {t('admin.categories.refresh')}
+                </button>
+              )}
+              <button onClick={() => handleToggle(s.id, !s.enabled)} style={{
+                width: 32, height: 18, borderRadius: 9, border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0,
+                background: s.enabled ? 'var(--accent)' : 'var(--bg-elevated)', position: 'relative', transition: 'background 0.2s',
+              }}>
+                <span style={{ position: 'absolute', top: 1, left: s.enabled ? 15 : 1, width: 16, height: 16, borderRadius: '50%', background: 'white', transition: 'left 0.2s' }} />
+              </button>
+              <button onClick={() => handleDelete(s.id)} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer', display: 'flex', padding: 2, flexShrink: 0 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 14 }}>{t('admin.categories.noSources')}</p>
+      )}
+
+      {addError && <p style={{ fontSize: 12, color: 'var(--red)', margin: '0 0 8px' }}>{addError}</p>}
+
+      <form onSubmit={handleAddManual} style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <input value={manualInput} onChange={e => setManualInput(e.target.value)}
+          placeholder={t('admin.categories.addManualPh')} style={{ ...inputStyle, flex: 1 }} />
+        <button type="submit" disabled={adding || !manualInput.trim()} style={{
+          padding: '7px 14px', background: 'var(--accent)', border: 'none', borderRadius: 6,
+          color: 'white', fontSize: 13, cursor: 'pointer', opacity: (adding || !manualInput.trim()) ? 0.5 : 1, flexShrink: 0,
+        }}>
+          {t('admin.categories.addBtn')}
+        </button>
+      </form>
+
+      {builtinSets.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          {builtinSets.map(setName => {
+            const isAdded = addedBuiltins.has(setName);
+            return (
+              <button key={setName} onClick={() => !isAdded && handleAddBuiltin(setName)}
+                disabled={adding || isAdded}
+                style={{
+                  padding: '5px 12px', borderRadius: 6, fontSize: 12,
+                  cursor: isAdded ? 'default' : 'pointer',
+                  background: isAdded ? 'var(--accent-dim)' : 'var(--bg-tertiary)',
+                  border: `1px solid ${isAdded ? 'var(--accent)' : 'var(--border)'}`,
+                  color: isAdded ? 'var(--accent)' : 'var(--text-secondary)',
+                  opacity: adding && !isAdded ? 0.5 : 1,
+                }}>
+                {setName === 'social_networks' ? t('admin.categories.builtinSocial') : t('admin.categories.builtinDev')}
+                {isAdded ? ' ✓' : ' +'}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <form onSubmit={handleAddUrl} style={{ display: 'flex', gap: 6, marginBottom: 24 }}>
+        <input value={urlInput} onChange={e => setUrlInput(e.target.value)}
+          placeholder={t('admin.categories.urlSubPh')} style={{ ...inputStyle, flex: 1 }} />
+        <button type="submit" disabled={adding || !urlInput.trim()} style={{
+          padding: '7px 14px', background: 'var(--bg-tertiary)', border: '1px solid var(--border)',
+          borderRadius: 6, color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer',
+          opacity: (adding || !urlInput.trim()) ? 0.5 : 1, flexShrink: 0,
+        }}>
+          {t('admin.categories.urlSubBtn')}
+        </button>
+      </form>
+
+      {enabledAccounts.length > 0 && (
+        <>
+          <div style={{ height: 1, background: 'var(--border-subtle)', margin: '4px 0 20px' }} />
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: 8 }}>
+            {t('admin.categories.recategorizeTitle')}
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 0, marginBottom: 12 }}>
+            {t('admin.categories.recategorizeDesc')}
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <select value={recatAccount} onChange={e => setRecatAccount(e.target.value)}
+              style={{ flex: 1, background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 6, padding: '7px 10px', color: 'var(--text-primary)', fontSize: 13 }}>
+              <option value="">{t('admin.categories.selectAccount')}</option>
+              {enabledAccounts.map(a => (
+                <option key={a.id} value={a.id}>{a.name} ({a.email_address})</option>
+              ))}
+            </select>
+            <button onClick={handleRecategorize} disabled={recategorizing || !recatAccount} style={{
+              padding: '7px 14px', background: 'var(--accent)', border: 'none', borderRadius: 6,
+              color: 'white', fontSize: 13, cursor: 'pointer',
+              opacity: (recategorizing || !recatAccount) ? 0.5 : 1, flexShrink: 0,
+            }}>
+              {recategorizing ? t('admin.categories.recategorizing') : t('admin.categories.recategorize')}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── System Email Section ─────────────────────────────────────────────────────
 function SystemEmailSection() {
   const { t } = useTranslation();
@@ -4887,7 +5178,7 @@ function RulesAndBlockListTab({ initialSubTab }) {
 }
 
 const TAB_GROUPS = [
-  { id: 'account-mail', labelKey: 'admin.tabs.groupAccountMail', tabIds: ['accounts', 'notifications', 'rules'] },
+  { id: 'account-mail', labelKey: 'admin.tabs.groupAccountMail', tabIds: ['accounts', 'notifications', 'rules', 'categories'] },
   { id: 'display', labelKey: 'admin.tabs.groupDisplay', tabIds: ['appearance', 'shortcuts'] },
   { id: 'security-integrations', labelKey: 'admin.tabs.groupSecurityIntegrations', tabIds: ['security', 'integrations', 'ai'] },
   { id: 'admin', labelKey: 'admin.tabs.groupAdmin', tabIds: ['users', 'sso'] },
@@ -4906,6 +5197,10 @@ const TABS = [
   {
     id: 'rules', labelKey: 'admin.tabs.rules',
     icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>,
+  },
+  {
+    id: 'categories', labelKey: 'admin.tabs.categories',
+    icon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
   },
   // Display
   {
@@ -6295,6 +6590,7 @@ function makeSearchIndex(t) {
     // Integrations
     { label: t('admin.integrations.microsoft.title'), keywords: ['microsoft', 'outlook', '365', 'oauth', 'azure', 'client id', 'tenant', 'ms365', 'office'], tab: 'integrations', breadcrumb: tabLabel('integrations') },
     { label: t('admin.ai.title'), keywords: ['ai', 'artificial intelligence', 'chatgpt', 'ollama', 'llm', 'language model', 'summarize', 'draft', 'compose assistant', 'openai', 'local ai', 'inference', 'gpt'], tab: 'ai', adminOnly: true, breadcrumb: tabLabel('ai') },
+    { label: t('admin.categories.title'), keywords: ['categories', 'categorize', 'newsletter', 'promotion', 'social', 'automated', 'inbox tabs', 'sort emails', 'classify'], tab: 'categories', breadcrumb: tabLabel('categories') },
     // Security
     { label: t('admin.security.totpTitle'), keywords: ['2fa', 'totp', 'authenticator', 'two factor', 'otp', 'two-factor', 'mfa', 'security code'], tab: 'security', subtab: 'security', breadcrumb: secCrumb },
     { label: t('admin.security.ssoTitle'), keywords: ['sso', 'linked', 'identity', 'provider', 'link', 'unlink', 'oidc', 'connect identity'], tab: 'security', subtab: 'security', breadcrumb: secCrumb },
@@ -6417,6 +6713,7 @@ export default function AdminPanel() {
     <>
       {adminTab === 'accounts' && <AccountsTab />}
       {adminTab === 'rules' && <RulesAndBlockListTab initialSubTab={pendingSubTab} />}
+      {adminTab === 'categories' && <CategoriesSection />}
       {adminTab === 'appearance' && <AppearanceTab initialSubTab={pendingSubTab} />}
       {adminTab === 'integrations' && <IntegrationsTab />}
       {adminTab === 'users' && <UsersTab />}

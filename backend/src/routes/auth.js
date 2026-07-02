@@ -13,6 +13,7 @@ import { getConnectionPolicy } from '../services/connectionPolicy.js';
 import { authLimiterConfig } from '../services/authLimiter.js';
 import { logAuthEvent } from '../services/authEvents.js';
 import { sendSystemEmail } from '../services/mailer.js';
+import { invalidateGlobalCategorizationCache } from '../services/categorizer.js';
 
 const router = Router();
 
@@ -683,7 +684,8 @@ router.patch('/preferences', async (req, res) => {
           blockRemoteImages, imageWhitelist, shortcuts, hiddenFolders, language,
           threadedView, plaintextEmail, hoverQuickActions, swipeActions,
           expandedAccounts, collapsedFolders, favoriteFolders, recentFolders, fontSize,
-          showAppBadge, showFaviconBadge, replyDefault, sidebarWidth } = req.body;
+          showAppBadge, showFaviconBadge, replyDefault, sidebarWidth,
+          categorizationEnabled } = req.body;
   // JSONB fields must be serialised to strings for the ::jsonb cast
   const imageWhitelistJson    = imageWhitelist    != null ? JSON.stringify(imageWhitelist)    : null;
   const shortcutsJson         = shortcuts         != null ? JSON.stringify(shortcuts)         : null;
@@ -724,19 +726,24 @@ router.patch('/preferences', async (req, res) => {
       || CASE WHEN $24::boolean IS NOT NULL THEN jsonb_build_object('showFaviconBadge', $24::boolean) ELSE '{}'::jsonb END
       || CASE WHEN $25::text IS NOT NULL THEN jsonb_build_object('replyDefault', $25::text) ELSE '{}'::jsonb END
       || CASE WHEN $26::text IS NOT NULL THEN jsonb_build_object('sidebarWidth', $26::text) ELSE '{}'::jsonb END
+      || CASE WHEN $27::boolean IS NOT NULL THEN jsonb_build_object('categorizationEnabled', $27::boolean) ELSE '{}'::jsonb END
     WHERE id = $1
   `, [req.session.userId, theme ?? null, font ?? null, layout ?? null, notificationSound ?? null,
       pageSize ?? null, scrollMode ?? null, syncInterval ?? null,
       blockRemoteImages ?? null, imageWhitelistJson, shortcutsJson, hiddenFoldersJson,
       language ?? null, threadedView ?? null, plaintextEmail ?? null, hoverQuickActions ?? null,
       swipeActionsJson, expandedAccountsJson, collapsedFoldersJson, favoriteFoldersJson, recentFoldersJson, fontSizeVal,
-      showAppBadge ?? null, showFaviconBadge ?? null, replyDefaultVal, sidebarWidthVal]);
+      showAppBadge ?? null, showFaviconBadge ?? null, replyDefaultVal, sidebarWidthVal,
+      categorizationEnabled ?? null]);
 
   if (syncInterval != null) {
     const ms = parseInt(syncInterval) * 1000;
     if (ms >= 15000 && ms <= 120000) {
       imapManager.updateSyncIntervalForUser(req.session.userId, ms).catch(console.error);
     }
+  }
+  if (categorizationEnabled != null) {
+    invalidateGlobalCategorizationCache(req.session.userId);
   }
 
   res.json({ ok: true });

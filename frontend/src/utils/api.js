@@ -220,6 +220,16 @@ export const api = {
     status: () => request('GET', '/ai/status'),
   },
 
+  // Email categorization
+  categories: {
+    getSources: () => request('GET', '/categories/sources'),
+    addSource: (data) => request('POST', '/categories/sources', data),
+    toggleSource: (id, enabled) => request('PATCH', `/categories/sources/${id}`, { enabled }),
+    deleteSource: (id) => request('DELETE', `/categories/sources/${id}`),
+    refreshSource: (id) => request('POST', `/categories/sources/${id}/refresh`),
+    recategorize: (accountId) => request('POST', `/categories/recategorize/${accountId}`),
+  },
+
   // Todoist integration
   todoist: {
     status:       ()       => request('GET',    '/todoist/status'),

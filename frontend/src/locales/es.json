@@ -310,7 +310,14 @@
     "composeAriaLabel": "Redactar nuevo mensaje",
     "noAccounts": "Aún sin cuentas",
     "noAccountsDesc": "Agrega una cuenta de correo para comenzar",
-    "foldersHeading": "Carpetas"
+    "foldersHeading": "Carpetas",
+    "categories": {
+      "primary": "Principal",
+      "newsletter": "Boletines",
+      "promotion": "Promociones",
+      "automated": "Automático",
+      "social": "Social"
+    }
   },
   "lockScreen": {
     "subtitle": "Introduce tu contraseña para desbloquear",
@@ -478,6 +485,7 @@
       "fontsAndLanguage": "Idioma y Fuente",
       "about": "Acerca de",
       "ai": "Asistente IA",
+      "categories": "Categorías",
       "groupAccountMail": "Cuenta y correo",
       "groupDisplay": "Visualización",
       "groupSecurityIntegrations": "Seguridad e integraciones",
@@ -593,7 +601,11 @@
       "reindexProgress": "{{synced}} / {{total}} mensajes indexados",
       "reindexError": "Error al iniciar la re-indexación",
       "senderNamePh": "p. ej. Alice Smith",
-      "senderName": "Nombre del remitente"
+      "senderName": "Nombre del remitente",
+      "categorizationSection": "Categorización de correo",
+      "categorizationEnabled": "Activar categorización del buzón",
+      "categorizationEnabledDesc": "Clasifica los correos entrantes en pestañas de categorías. Desactivado por defecto.",
+      "enabledGlobally": "Activado globalmente"
     },
     "folderMappings": {
       "title": "Asignación de carpetas",
@@ -894,6 +906,32 @@
       "testing": "Probando…",
       "notConfigured": "Ningún proveedor de IA configurado aún.",
       "remove": "Eliminar configuración"
+    },
+    "categories": {
+      "title": "Categorías de correo",
+      "description": "Clasifica automáticamente los correos entrantes en pestañas. Activa la categorización en la configuración de cada cuenta.",
+      "globalEnabled": "Activar categorización globalmente",
+      "globalEnabledDesc": "Habilita las pestañas de categorías para todas las cuentas, incluida la bandeja unificada.",
+      "sourcesTitle": "Fuentes de la categoría Social",
+      "sourcesDesc": "Agrega dominios o correos para clasificar como Social. También puedes usar conjuntos integrados y suscripciones URL.",
+      "addManualPh": "ej. twitter.com",
+      "addBtn": "Agregar",
+      "urlSubPh": "https://example.com/social-domains.txt",
+      "urlSubBtn": "Suscribir",
+      "builtinSocial": "Redes sociales",
+      "builtinDev": "Plataformas de desarrollo",
+      "domainCount": "{{count}} dominios",
+      "refresh": "Actualizar",
+      "noSources": "Aún no hay fuentes agregadas.",
+      "deleteConfirm": "¿Eliminar esta fuente?",
+      "fetchedOk": "Actualizado: {{count}} dominios",
+      "addedOk": "Agregado",
+      "recategorizeTitle": "Recategorizar mensajes",
+      "recategorizeDesc": "Reclasifica los mensajes del buzón de entrada de una cuenta con las fuentes actuales.",
+      "recategorize": "Recategorizar",
+      "recategorizing": "Procesando…",
+      "recategorized": "Recategorización iniciada.",
+      "selectAccount": "Seleccionar cuenta"
     },
     "systemEmail": {
       "tabUsers": "Usuarios e invitaciones",

@@ -190,6 +190,34 @@ export function detectBulkFromParsedHeaders(h) {
   return prec === 'bulk' || prec === 'list';
 }
 
+// Returns 'newsletter' | 'promotion' | 'automated' | null.
+// null means no header signal found — caller decides 'social' or 'primary'.
+// Does NOT check social domains (caller supplies those).
+export function detectCategoryFromHeaders(h) {
+  if (!h) return null;
+
+  // Newsletter — RFC mailing list headers (same signals as is_bulk)
+  if (h['list-id'] || h['list-unsubscribe'] || h['list-post']) return 'newsletter';
+  const prec = (h['precedence'] || '').toLowerCase();
+  if (prec === 'bulk' || prec === 'list') return 'newsletter';
+
+  // Promotion — known marketing platform headers
+  if (h['x-campaign-id'] || h['x-mailchimp-campaign-id'] ||
+      h['x-marketo-track'] || h['x-salesforce-emailid'] ||
+      h['x-klaviyo-campaign-id'] || h['x-hubspot-email-id']) return 'promotion';
+  const mailer = (h['x-mailer'] || '').toLowerCase();
+  if (mailer.includes('mailchimp') || mailer.includes('constant contact') ||
+      mailer.includes('klaviyo') || mailer.includes('hubspot') ||
+      mailer.includes('marketo') || mailer.includes('sendgrid')) return 'promotion';
+
+  // Automated — transactional / system notifications
+  // RFC 3834: Auto-Submitted values other than 'no' indicate automated mail.
+  const autoSubmitted = (h['auto-submitted'] || '').toLowerCase().trim();
+  if (autoSubmitted && autoSubmitted !== 'no') return 'automated';
+
+  return null;
+}
+
 export async function parseMessage(msg) {
   const envelope = msg.envelope || {};
   const flags = msg.flags ? [...msg.flags] : [];

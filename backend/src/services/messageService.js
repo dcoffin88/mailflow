@@ -1,6 +1,6 @@
 import { query } from './db.js';
 
-export async function listMessages({ userId, accountId, folder = 'INBOX', limit = 50, offset = 0, unreadOnly, threaded }) {
+export async function listMessages({ userId, accountId, folder = 'INBOX', limit = 50, offset = 0, unreadOnly, threaded, category }) {
   const accountsResult = await query(
     'SELECT id FROM email_accounts WHERE user_id = $1 AND enabled = true',
     [userId]
@@ -27,6 +27,15 @@ export async function listMessages({ userId, accountId, folder = 'INBOX', limit 
 
   const isUnreadOnly = unreadOnly === 'true' || unreadOnly === true;
   if (isUnreadOnly) whereConditions.push('m.is_read = false');
+
+  // Category filter: 'primary' matches NULL and 'primary'; others match exactly.
+  const safeCategory = typeof category === 'string' && category.length > 0 ? category : null;
+  if (safeCategory && safeCategory !== 'primary') {
+    whereConditions.push(`m.category = $${p++}`);
+    values.push(safeCategory);
+  } else if (safeCategory === 'primary') {
+    whereConditions.push(`(m.category IS NULL OR m.category = 'primary')`);
+  }
 
   const where = whereConditions.join(' AND ');
 

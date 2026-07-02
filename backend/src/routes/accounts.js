@@ -39,7 +39,7 @@ const SAFE_FIELDS = [
   'smtp_host', 'smtp_port', 'smtp_tls',
   'auth_user', 'oauth_provider', 'enabled',
   'last_sync', 'sync_error', 'sort_order', 'folder_mappings',
-  'signature', 'created_at',
+  'signature', 'created_at', 'categorization_enabled',
 ];
 function safeAccount(row) {
   const obj = Object.fromEntries(SAFE_FIELDS.map(k => [k, row[k]]));
@@ -52,7 +52,8 @@ router.get('/', async (req, res) => {
   const result = await query(
     `SELECT id, name, sender_name, email_address, color, protocol, imap_host, imap_port, imap_tls, imap_skip_tls_verify,
             smtp_host, smtp_port, smtp_tls, auth_user, oauth_provider, enabled,
-            last_sync, sync_error, sort_order, folder_mappings, signature, created_at
+            last_sync, sync_error, sort_order, folder_mappings, signature, created_at,
+            categorization_enabled
      FROM email_accounts WHERE user_id = $1 ORDER BY sort_order, created_at`,
     [req.session.userId]
   );
@@ -181,7 +182,7 @@ router.put('/:id', async (req, res) => {
   }
 
   if ('imap_port' in updates) updates.imap_tls = Number(updates.imap_port) % 1000 === 993;
-  const allowed = ['name', 'sender_name', 'color', 'enabled', 'auth_user', 'auth_pass', 'sort_order', 'imap_host', 'imap_port', 'imap_tls', 'imap_skip_tls_verify', 'smtp_host', 'smtp_port', 'smtp_tls', 'folder_mappings', 'signature'];
+  const allowed = ['name', 'sender_name', 'color', 'enabled', 'auth_user', 'auth_pass', 'sort_order', 'imap_host', 'imap_port', 'imap_tls', 'imap_skip_tls_verify', 'smtp_host', 'smtp_port', 'smtp_tls', 'folder_mappings', 'signature', 'categorization_enabled'];
   const sets = [];
   const values = [];
   let i = 1;

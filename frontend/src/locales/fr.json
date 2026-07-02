@@ -310,7 +310,14 @@
     "composeAriaLabel": "Rédiger un nouveau message",
     "noAccounts": "Aucun compte pour l'instant",
     "noAccountsDesc": "Ajoutez un compte e-mail pour commencer",
-    "foldersHeading": "Dossiers"
+    "foldersHeading": "Dossiers",
+    "categories": {
+      "primary": "Principal",
+      "newsletter": "Newsletters",
+      "promotion": "Promotions",
+      "automated": "Automatisé",
+      "social": "Réseaux sociaux"
+    }
   },
   "lockScreen": {
     "subtitle": "Saisissez votre mot de passe pour déverrouiller",
@@ -478,6 +485,7 @@
       "fontsAndLanguage": "Langue & Police",
       "about": "À propos",
       "ai": "Assistant IA",
+      "categories": "Catégories",
       "groupAccountMail": "Compte et courrier",
       "groupDisplay": "Affichage",
       "groupSecurityIntegrations": "Sécurité et intégrations",
@@ -593,7 +601,11 @@
       "reindexProgress": "{{synced}} / {{total}} messages indexés",
       "reindexError": "Échec du démarrage de la réindexation",
       "senderNamePh": "ex. Alice Smith",
-      "senderName": "Nom de l'expéditeur"
+      "senderName": "Nom de l'expéditeur",
+      "categorizationSection": "Catégorisation des e-mails",
+      "categorizationEnabled": "Activer la catégorisation",
+      "categorizationEnabledDesc": "Classe les e-mails entrants dans des onglets de catégories. Désactivé par défaut.",
+      "enabledGlobally": "Activé globalement"
     },
     "folderMappings": {
       "title": "Mappage des dossiers",
@@ -894,6 +906,32 @@
       "testing": "Test en cours…",
       "notConfigured": "Aucun fournisseur IA configuré.",
       "remove": "Supprimer la configuration"
+    },
+    "categories": {
+      "title": "Catégories d’e-mails",
+      "description": "Trie automatiquement les e-mails entrants dans des onglets. Activer la catégorisation dans les paramètres du compte.",
+      "globalEnabled": "Activer la catégorisation globalement",
+      "globalEnabledDesc": "Active les onglets de catégories pour tous les comptes, y compris la boîte de réception unifiée.",
+      "sourcesTitle": "Sources de la catégorie Social",
+      "sourcesDesc": "Ajoutez des domaines ou adresses e-mail à classer comme Social. Des ensembles intégrés et des abonnements URL sont aussi disponibles.",
+      "addManualPh": "ex. twitter.com",
+      "addBtn": "Ajouter",
+      "urlSubPh": "https://example.com/social-domains.txt",
+      "urlSubBtn": "S’abonner",
+      "builtinSocial": "Réseaux sociaux",
+      "builtinDev": "Plateformes de développement",
+      "domainCount": "{{count}} domaines",
+      "refresh": "Actualiser",
+      "noSources": "Aucune source ajoutée pour l’instant.",
+      "deleteConfirm": "Supprimer cette source ?",
+      "fetchedOk": "Actualisé : {{count}} domaines",
+      "addedOk": "Ajouté",
+      "recategorizeTitle": "Recatégoriser les messages",
+      "recategorizeDesc": "Reclasser les messages de la boîte de réception d’un compte avec les sources actuelles.",
+      "recategorize": "Recatégoriser",
+      "recategorizing": "Traitement…",
+      "recategorized": "Recatégorisation démarrée.",
+      "selectAccount": "Sélectionner un compte"
     },
     "systemEmail": {
       "tabUsers": "Utilisateurs et invitations",

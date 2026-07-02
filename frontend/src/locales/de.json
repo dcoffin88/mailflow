@@ -310,7 +310,14 @@
     "composeAriaLabel": "Neue Nachricht verfassen",
     "noAccounts": "Noch keine Konten",
     "noAccountsDesc": "E-Mail-Konto hinzufügen, um loszulegen",
-    "foldersHeading": "Ordner"
+    "foldersHeading": "Ordner",
+    "categories": {
+      "primary": "Primär",
+      "newsletter": "Newsletter",
+      "promotion": "Werbung",
+      "automated": "Automatisch",
+      "social": "Sozial"
+    }
   },
   "lockScreen": {
     "subtitle": "Passwort eingeben, um zu entsperren",
@@ -477,6 +484,7 @@
       "fontsAndLanguage": "Sprache & Schrift",
       "about": "Über",
       "ai": "KI-Assistent",
+      "categories": "Kategorien",
       "rules": "Regeln",
       "groupAccountMail": "Konto und Mail",
       "groupDisplay": "Anzeige",
@@ -530,7 +538,11 @@
       "reindex": "Für die Suche neu indizieren",
       "reindexing": "Nachrichten werden indiziert...",
       "reindexProgress": "{{synced}} / {{total}} Nachrichten indiziert",
-      "reindexError": "Neuindizierung konnte nicht gestartet werden"
+      "reindexError": "Neuindizierung konnte nicht gestartet werden",
+      "categorizationSection": "E-Mail-Kategorisierung",
+      "categorizationEnabled": "Posteingang-Kategorisierung aktivieren",
+      "categorizationEnabledDesc": "Eingehende E-Mails in Kategorie-Tabs einteilen. Standardmäßig deaktiviert.",
+      "enabledGlobally": "Global aktiviert"
     },
     "folderMappings": {
       "title": "Ordnerzuordnungen",
@@ -831,6 +843,32 @@
       "testing": "Teste…",
       "notConfigured": "Noch kein KI-Anbieter konfiguriert.",
       "remove": "Konfiguration entfernen"
+    },
+    "categories": {
+      "title": "E-Mail-Kategorien",
+      "description": "Eingehende E-Mails automatisch in Kategorie-Tabs einteilen. Kategorisierung in den Kontoeinstellungen aktivieren.",
+      "globalEnabled": "Kategorisierung global aktivieren",
+      "globalEnabledDesc": "Aktiviert Kategorie-Tabs für alle Konten, einschließlich des gemeinsamen Posteingangs.",
+      "sourcesTitle": "Quellen für die Social-Kategorie",
+      "sourcesDesc": "Absenderdomänen oder E-Mail-Adressen als Sozial klassifizieren. Vordefinierte Sets und URL-Abonnements sind ebenfalls verfügbar.",
+      "addManualPh": "z.B. twitter.com",
+      "addBtn": "Hinzufügen",
+      "urlSubPh": "https://example.com/social-domains.txt",
+      "urlSubBtn": "Abonnieren",
+      "builtinSocial": "Soziale Netzwerke",
+      "builtinDev": "Entwicklerplattformen",
+      "domainCount": "{{count}} Domains",
+      "refresh": "Aktualisieren",
+      "noSources": "Noch keine Quellen hinzugefügt.",
+      "deleteConfirm": "Diese Quelle entfernen?",
+      "fetchedOk": "Aktualisiert: {{count}} Domains",
+      "addedOk": "Hinzugefügt",
+      "recategorizeTitle": "Nachrichten neu kategorisieren",
+      "recategorizeDesc": "Alle vorhandenen Posteingang-Nachrichten eines Kontos mit den aktuellen Quellen neu klassifizieren.",
+      "recategorize": "Neu kategorisieren",
+      "recategorizing": "Verarbeite…",
+      "recategorized": "Neukategorisierung gestartet.",
+      "selectAccount": "Konto auswählen"
     },
     "systemEmail": {
       "tabUsers": "Benutzer & Einladungen",
