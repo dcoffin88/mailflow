@@ -2851,8 +2851,8 @@ export class ImapManager {
       } catch (err) {
         console.error(`syncNow error for ${logAccount(account)}:`, err.message);
         const conn = this.connections.get(account.id);
-        if (conn?.client) {
-          try { await conn.client.logout(); } catch { /* already disconnected */ }
+        if (conn) {
+          try { await conn.logout(); } catch { /* already disconnected */ }
         }
         this.connections.delete(account.id);
       } finally {
