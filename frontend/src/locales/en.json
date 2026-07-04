@@ -227,7 +227,8 @@
       "info": "You can unsubscribe from this mailing list.",
       "button": "Unsubscribe",
       "done": "Unsubscribed successfully.",
-      "error": "Unsubscribe failed."
+      "error": "Unsubscribe failed.",
+      "moveToTrash": "Move to trash"
     },
     "aiClassify": {
       "info": "This email has no category. Classify it with AI?",

@@ -115,7 +115,7 @@ router.get('/messages/:id', async (req, res) => {
              m.reply_to, m.in_reply_to,
              m.date, m.snippet, m.is_read, m.is_starred,
              m.has_attachments, m.account_id, m.category,
-             m.list_unsubscribe, m.list_unsubscribe_post,
+             m.list_unsubscribe, m.list_unsubscribe_post, m.unsubscribed_at,
              a.name AS account_name, a.email_address AS account_email,
              a.color AS account_color
       FROM messages m
@@ -172,7 +172,7 @@ router.get('/thread/:threadId', async (req, res) => {
                m.reply_to, m.in_reply_to,
                m.date, m.snippet, m.is_read, m.is_starred,
                m.has_attachments, m.account_id, m.category,
-               m.list_unsubscribe, m.list_unsubscribe_post,
+               m.list_unsubscribe, m.list_unsubscribe_post, m.unsubscribed_at,
                a.name AS account_name, a.email_address AS account_email, a.color AS account_color
         FROM messages m
         JOIN email_accounts a ON m.account_id = a.id
@@ -1637,17 +1637,21 @@ router.post('/messages/:id/unsubscribe', async (req, res) => {
         body: 'List-Unsubscribe=One-Click',
         signal: AbortSignal.timeout(10000),
       });
-      if (!unsub.ok) {
-        console.warn(`One-click unsubscribe returned ${unsub.status} for ${httpsUrl}`);
+      if (unsub.ok) {
+        await query('UPDATE messages SET unsubscribed_at = NOW() WHERE id = $1', [id]);
+        return res.json({ ok: true, type: 'one-click' });
       }
-      return res.json({ ok: true, type: 'one-click' });
+      console.warn(`One-click unsubscribe returned ${unsub.status} for ${httpsUrl}`);
+      // Fall through to URL/mailto fallback
     } catch (err) {
       console.warn('One-click unsubscribe failed:', err.message);
-      // Fall through to return URL/mailto options instead
+      // Fall through to URL/mailto options instead
     }
   }
 
   // Return parsed options for the frontend to handle.
+  // Mark unsubscribed_at optimistically — the user has been given the mechanism to complete it.
+  await query('UPDATE messages SET unsubscribed_at = NOW() WHERE id = $1', [id]);
   res.json({
     ok: true,
     type: httpsUrl ? 'url' : 'mailto',

@@ -227,7 +227,8 @@
       "info": "Puedes darte de baja de esta lista de correo.",
       "button": "Darse de baja",
       "done": "Dado de baja correctamente.",
-      "error": "Error al darse de baja."
+      "error": "Error al darse de baja.",
+      "moveToTrash": "Mover a la papelera"
     },
     "aiClassify": {
       "info": "Este correo no tiene categoría. ¿Clasificar con IA?",

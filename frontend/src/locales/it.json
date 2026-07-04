@@ -227,7 +227,8 @@
       "info": "Puoi annullare l'iscrizione a questa mailing list.",
       "button": "Annulla iscrizione",
       "done": "Iscrizione annullata con successo.",
-      "error": "Annullamento iscrizione fallito."
+      "error": "Annullamento iscrizione fallito.",
+      "moveToTrash": "Sposta nel cestino"
     },
     "aiClassify": {
       "info": "Questa email non ha una categoria. Classificare con IA?",

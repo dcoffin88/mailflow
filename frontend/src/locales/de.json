@@ -227,7 +227,8 @@
       "info": "Sie können sich von dieser Mailingliste abmelden.",
       "button": "Abmelden",
       "done": "Erfolgreich abgemeldet.",
-      "error": "Abmeldung fehlgeschlagen."
+      "error": "Abmeldung fehlgeschlagen.",
+      "moveToTrash": "In den Papierkorb verschieben"
     },
     "aiClassify": {
       "info": "Diese E-Mail hat keine Kategorie. Mit KI klassifizieren?",

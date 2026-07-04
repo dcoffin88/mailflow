@@ -1280,20 +1280,27 @@ ${bodyContent}
   const handleUnsubscribe = async () => {
     if (!message) return;
     setUnsubscribeStatus('loading');
+    const msg = message;
     try {
-      const result = await api.unsubscribeMessage(message.id);
-      if (result.type === 'one-click') {
-        setUnsubscribeStatus('done');
-        addNotification({ title: t('message.unsubscribe.done') });
-      } else if (result.type === 'url' && result.url) {
-        setUnsubscribeStatus('done');
-        window.open(result.url, '_blank', 'noopener,noreferrer');
-      } else if (result.type === 'mailto' && result.mailto) {
-        setUnsubscribeStatus('done');
-        window.open(result.mailto, '_blank', 'noopener,noreferrer');
-      } else {
-        setUnsubscribeStatus('error');
-      }
+      const result = await api.unsubscribeMessage(msg.id);
+      const succeeded = result.type === 'one-click' || result.type === 'url' || result.type === 'mailto';
+      if (!succeeded) { setUnsubscribeStatus('error'); return; }
+      if (result.type === 'url' && result.url) window.open(result.url, '_blank', 'noopener,noreferrer');
+      else if (result.type === 'mailto' && result.mailto) window.open(result.mailto, '_blank', 'noopener,noreferrer');
+      setUnsubscribeStatus('done');
+      addNotification({
+        title: t('message.unsubscribe.done'),
+        actionLabel: t('message.unsubscribe.moveToTrash'),
+        onAction: () => {
+          const { removeMessage, decrementUnread, restoreMessages, incrementUnread } = useStore.getState();
+          removeMessage(msg.id);
+          if (!msg.is_read) decrementUnread(msg.account_id);
+          api.deleteMessage(msg.id).catch(() => {
+            restoreMessages([msg]);
+            if (!msg.is_read) incrementUnread(msg.account_id);
+          });
+        },
+      });
     } catch {
       setUnsubscribeStatus('error');
       addNotification({ type: 'error', title: t('message.unsubscribe.error') });
@@ -2104,7 +2111,7 @@ ${bodyContent}
       {!loadingBody && !bodyError && body?.html && (
         <div style={{ padding: isMobile ? '0 0 16px' : '0 28px 24px' }}>
           {/* Unsubscribe banner — shown for newsletter messages that have a List-Unsubscribe header */}
-          {message.list_unsubscribe && unsubscribeStatus !== 'done' && (
+          {message.list_unsubscribe && !message.unsubscribed_at && unsubscribeStatus !== 'done' && (
             <div style={{
               marginBottom: 10, padding: '9px 14px',
               background: 'var(--bg-secondary)',
@@ -2293,7 +2300,7 @@ ${bodyContent}
         <div style={{
           padding: isMobile ? '0 0px 16px' : '0 28px 24px',
         }}>
-          {message.list_unsubscribe && unsubscribeStatus !== 'done' && (
+          {message.list_unsubscribe && !message.unsubscribed_at && unsubscribeStatus !== 'done' && (
             <div style={{
               marginBottom: 10, padding: '9px 14px',
               background: 'var(--bg-secondary)', border: '1px solid var(--border)',

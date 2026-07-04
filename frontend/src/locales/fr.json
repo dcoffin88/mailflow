@@ -227,7 +227,8 @@
       "info": "Vous pouvez vous désabonner de cette liste de diffusion.",
       "button": "Se désabonner",
       "done": "Désabonnement réussi.",
-      "error": "Échec du désabonnement."
+      "error": "Échec du désabonnement.",
+      "moveToTrash": "Déplacer vers la corbeille"
     },
     "aiClassify": {
       "info": "Cet e-mail n'a pas de catégorie. Le classer avec l'IA ?",
