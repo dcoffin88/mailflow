@@ -125,6 +125,8 @@ const SAME_VALUE_ALLOWED = {
   'admin.integrations.microsoft.clientIdPh':'any', // xxxxxxxx-xxxx-…
   'admin.integrations.microsoft.title':     'any', // Microsoft 365 / Outlook.com
   'admin.security.totpVerifyPh':            'any', // 000000
+  'admin.sso.adminGroupClaimPh':            'any', // groups
+  'admin.sso.adminGroupValuePh':            'any', // mailflow-admins
   'admin.sso.issuerUrlPh':                  'any', // https://accounts.google.com
   'admin.sso.scopesPh':                     'any', // openid email profile
   'login.totp.placeholder':                 'any', // 000000

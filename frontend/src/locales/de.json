@@ -964,7 +964,13 @@
       "errorRequired": "Name, Slug, Aussteller-URL und Client-ID sind erforderlich.",
       "errorSecretRequired": "Client-Secret ist erforderlich.",
       "allowInsecure": "Lokale / selbstsignierte Verbindungen erlauben",
-      "allowInsecureDesc": "Umgeht die Host-Validierung und TLS-Zertifikatsprüfungen. Nur für LAN-seitige Anbieter (z. B. pocketid.internal) verwenden. Nicht empfohlen für internetfähige Deployments."
+      "allowInsecureDesc": "Umgeht die Host-Validierung und TLS-Zertifikatsprüfungen. Nur für LAN-seitige Anbieter (z. B. pocketid.internal) verwenden. Nicht empfohlen für internetfähige Deployments.",
+      "adminGroupClaim": "Admin-Gruppenanspruch",
+      "adminGroupClaimPh": "groups",
+      "adminGroupClaimDesc": "Name des JWT-Claims, der die Gruppen des Benutzers enthält (z. B. groups). Leer lassen, um gruppenbasierte Admin-Zuweisung zu deaktivieren.",
+      "adminGroupValue": "Admin-Gruppenwert",
+      "adminGroupValuePh": "mailflow-admins",
+      "adminGroupValueDesc": "Der Gruppenname, der Admin-Zugriff gewährt. Benutzer in dieser Gruppe werden bei jeder SSO-Anmeldung zu Admins; Benutzer, die nicht in dieser Gruppe sind, verlieren den Admin-Zugriff."
     },
     "integrations": {
       "title": "Integrationen",

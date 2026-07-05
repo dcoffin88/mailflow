@@ -107,6 +107,19 @@ function getRedirectUri(provider) {
   return `${process.env.APP_URL}/auth/oidc/${provider.slug}/callback`;
 }
 
+// Returns true/false when admin_group_claim is configured, null when not configured.
+// true  → user should be admin
+// false → user should not be admin
+// null  → feature not configured; leave is_admin unchanged
+function resolveAdminFromClaim(payload, provider) {
+  if (!provider.admin_group_claim || !provider.admin_group_value) return null;
+  const val = payload[provider.admin_group_claim];
+  if (val === undefined) return false;
+  if (Array.isArray(val)) return val.includes(provider.admin_group_value);
+  if (typeof val === 'string') return val === provider.admin_group_value;
+  return false;
+}
+
 // ── Public API router (mounted at /api/auth/oidc) ─────────────────────────────
 
 const oidcApiRouter = Router();
@@ -381,6 +394,14 @@ oidcBrowserRouter.get('/:slug/callback', async (req, res) => {
         return oidcError(res, 'login', 'Account not found');
       }
       const user = userRow.rows[0];
+
+      // Re-evaluate admin status from group claim on every login (if configured)
+      const adminFromClaim = resolveAdminFromClaim(payload, provider);
+      if (adminFromClaim !== null && adminFromClaim !== user.is_admin) {
+        await client.query('UPDATE users SET is_admin = $1 WHERE id = $2', [adminFromClaim, user.id]);
+        user.is_admin = adminFromClaim;
+      }
+
       await client.query(
         'UPDATE user_identities SET last_used_at = NOW() WHERE issuer = $1 AND subject = $2',
         [issuer, subject]
@@ -428,6 +449,14 @@ oidcBrowserRouter.get('/:slug/callback', async (req, res) => {
       if (!user) {
         return oidcError(res, 'login', 'No account found matching this email. Contact your administrator.');
       }
+
+      // Evaluate admin status from group claim on first SSO link (if configured)
+      const adminFromClaim = resolveAdminFromClaim(payload, provider);
+      if (adminFromClaim !== null && adminFromClaim !== user.is_admin) {
+        await client.query('UPDATE users SET is_admin = $1 WHERE id = $2', [adminFromClaim, user.id]);
+        user.is_admin = adminFromClaim;
+      }
+
       await client.query(
         `INSERT INTO user_identities (user_id, provider_id, issuer, subject, email, email_verified, last_used_at)
          VALUES ($1, $2, $3, $4, $5, $6, NOW())
@@ -457,15 +486,24 @@ oidcBrowserRouter.get('/:slug/callback', async (req, res) => {
           'SELECT id, username, is_admin FROM users WHERE username = $1',
           [email.toLowerCase()]
         );
+        const adminFromClaim = resolveAdminFromClaim(payload, provider);
         let user;
         if (existingUser.rows.length) {
           user = existingUser.rows[0];
+          // Evaluate admin status from group claim on first SSO link (if configured)
+          if (adminFromClaim !== null && adminFromClaim !== user.is_admin) {
+            await client.query('UPDATE users SET is_admin = $1 WHERE id = $2', [adminFromClaim, user.id]);
+            user = { ...user, is_admin: adminFromClaim };
+          }
         } else {
           const countRow = await client.query('SELECT COUNT(*) AS count FROM users');
           const isFirstUser = parseInt(countRow.rows[0].count) === 0;
+          // First-ever user is always admin regardless of claim (bootstrap).
+          // For subsequent users, use the claim result if configured, else false.
+          const isAdmin = isFirstUser || adminFromClaim === true;
           const newUser = await client.query(
             'INSERT INTO users (username, password_hash, is_admin) VALUES ($1, NULL, $2) RETURNING id, username, is_admin',
-            [email.toLowerCase(), isFirstUser]
+            [email.toLowerCase(), isAdmin]
           );
           user = newUser.rows[0];
           if (isFirstUser) {

@@ -470,14 +470,15 @@ router.delete('/system-email', async (req, res) => {
 router.get('/oidc', async (req, res) => {
   const result = await query(
     `SELECT id, name, slug, issuer_url, client_id, scopes, provisioning_mode,
-            allowed_domains, enabled, require_email_verified, allow_insecure, created_at, updated_at
+            allowed_domains, enabled, require_email_verified, allow_insecure,
+            admin_group_claim, admin_group_value, created_at, updated_at
      FROM oidc_providers ORDER BY name ASC`
   );
   res.json({ providers: result.rows });
 });
 
 router.post('/oidc', async (req, res) => {
-  const { name, slug, issuer_url, client_id, client_secret, scopes, provisioning_mode, allowed_domains, enabled, require_email_verified, allow_insecure } = req.body;
+  const { name, slug, issuer_url, client_id, client_secret, scopes, provisioning_mode, allowed_domains, enabled, require_email_verified, allow_insecure, admin_group_claim, admin_group_value } = req.body;
   if (!name || !slug || !issuer_url || !client_id || !client_secret) {
     return res.status(400).json({ error: 'name, slug, issuer_url, client_id and client_secret are required' });
   }
@@ -498,9 +499,9 @@ router.post('/oidc', async (req, res) => {
   }
   try {
     const result = await query(
-      `INSERT INTO oidc_providers (name, slug, issuer_url, client_id, client_secret, scopes, provisioning_mode, allowed_domains, enabled, require_email_verified, allow_insecure)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, name, slug, issuer_url, client_id, scopes, provisioning_mode, allowed_domains, enabled, require_email_verified, allow_insecure`,
+      `INSERT INTO oidc_providers (name, slug, issuer_url, client_id, client_secret, scopes, provisioning_mode, allowed_domains, enabled, require_email_verified, allow_insecure, admin_group_claim, admin_group_value)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       RETURNING id, name, slug, issuer_url, client_id, scopes, provisioning_mode, allowed_domains, enabled, require_email_verified, allow_insecure, admin_group_claim, admin_group_value`,
       [
         name.trim(), slug.trim(), issuer_url.trim(), client_id.trim(),
         encrypt(client_secret),
@@ -510,6 +511,8 @@ router.post('/oidc', async (req, res) => {
         enabled !== false,
         require_email_verified !== false,
         allow_insecure === true,
+        admin_group_claim?.trim() || null,
+        admin_group_value?.trim() || null,
       ]
     );
     res.json({ provider: result.rows[0] });
@@ -521,7 +524,7 @@ router.post('/oidc', async (req, res) => {
 
 router.patch('/oidc/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, slug, issuer_url, client_id, client_secret, scopes, provisioning_mode, allowed_domains, enabled, require_email_verified, allow_insecure } = req.body;
+  const { name, slug, issuer_url, client_id, client_secret, scopes, provisioning_mode, allowed_domains, enabled, require_email_verified, allow_insecure, admin_group_claim, admin_group_value } = req.body;
 
   const existingResult = await query('SELECT allow_insecure FROM oidc_providers WHERE id = $1', [id]);
   if (!existingResult.rows.length) return res.status(404).json({ error: 'Provider not found' });
@@ -563,9 +566,11 @@ router.patch('/oidc/:id', async (req, res) => {
         enabled = COALESCE($10, enabled),
         require_email_verified = COALESCE($11, require_email_verified),
         allow_insecure = COALESCE($12, allow_insecure),
+        admin_group_claim = CASE WHEN $13::text IS DISTINCT FROM '__keep__' THEN $13::text ELSE admin_group_claim END,
+        admin_group_value = CASE WHEN $14::text IS DISTINCT FROM '__keep__' THEN $14::text ELSE admin_group_value END,
         updated_at = NOW()
        WHERE id = $1
-       RETURNING id, name, slug, issuer_url, client_id, scopes, provisioning_mode, allowed_domains, enabled, require_email_verified, allow_insecure`,
+       RETURNING id, name, slug, issuer_url, client_id, scopes, provisioning_mode, allowed_domains, enabled, require_email_verified, allow_insecure, admin_group_claim, admin_group_value`,
       [
         id,
         name?.trim() || null,
@@ -579,6 +584,8 @@ router.patch('/oidc/:id', async (req, res) => {
         enabled !== undefined ? enabled : null,
         require_email_verified !== undefined ? require_email_verified : null,
         allow_insecure !== undefined ? allow_insecure : null,
+        admin_group_claim !== undefined ? (admin_group_claim?.trim() || null) : '__keep__',
+        admin_group_value !== undefined ? (admin_group_value?.trim() || null) : '__keep__',
       ]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'Provider not found' });

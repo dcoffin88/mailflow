@@ -2518,6 +2518,7 @@ const emptyProvider = {
   name: '', slug: '', issuer_url: '', client_id: '', client_secret: '',
   scopes: 'openid email profile', provisioning_mode: 'login_existing_only',
   allowed_domains: '', enabled: true, require_email_verified: true, allow_insecure: false,
+  admin_group_claim: '', admin_group_value: '',
 };
 
 function SSOTab() {
@@ -2587,7 +2588,7 @@ function SSOTab() {
     setError('');
   };
   const openEdit = (p) => {
-    setForm({ ...p, client_secret: '••••••••', allowed_domains: p.allowed_domains || '', require_email_verified: p.require_email_verified !== false, allow_insecure: p.allow_insecure === true });
+    setForm({ ...p, client_secret: '••••••••', allowed_domains: p.allowed_domains || '', require_email_verified: p.require_email_verified !== false, allow_insecure: p.allow_insecure === true, admin_group_claim: p.admin_group_claim || '', admin_group_value: p.admin_group_value || '' });
     setTemplateNote('');
     setEditing(p);
     setError('');
@@ -2615,6 +2616,8 @@ function SSOTab() {
         enabled: form.enabled,
         require_email_verified: !!form.require_email_verified,
         allow_insecure: !!form.allow_insecure,
+        admin_group_claim: form.admin_group_claim.trim() || null,
+        admin_group_value: form.admin_group_value.trim() || null,
         ...(form.client_secret && form.client_secret !== '••••••••' ? { client_secret: form.client_secret } : {}),
       };
       if (editing === 'new') {
@@ -2906,6 +2909,16 @@ function SSOTab() {
 
           <Field label={t('admin.sso.domains')}>
             <input value={form.allowed_domains} onChange={e => setForm(f => ({ ...f, allowed_domains: e.target.value }))} placeholder={t('admin.sso.domainsPh')} style={inputStyle} />
+          </Field>
+
+          <Field label={t('admin.sso.adminGroupClaim')}>
+            <input value={form.admin_group_claim} onChange={e => setForm(f => ({ ...f, admin_group_claim: e.target.value }))} placeholder={t('admin.sso.adminGroupClaimPh')} style={inputStyle} />
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>{t('admin.sso.adminGroupClaimDesc')}</div>
+          </Field>
+
+          <Field label={t('admin.sso.adminGroupValue')}>
+            <input value={form.admin_group_value} onChange={e => setForm(f => ({ ...f, admin_group_value: e.target.value }))} placeholder={t('admin.sso.adminGroupValuePh')} style={inputStyle} />
+            <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 4 }}>{t('admin.sso.adminGroupValueDesc')}</div>
           </Field>
 
           <Field label={t('admin.sso.provisioning')}>
