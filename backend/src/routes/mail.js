@@ -1344,6 +1344,7 @@ router.delete('/messages/:id', async (req, res) => {
     }
     await query('DELETE FROM messages WHERE id = $1', [id]);
     adjustFolderCounts(message.account_id, message.folder, -1, -wasUnread);
+    imapManager.broadcast({ type: 'folder_updated', folder: message.folder, accountId: message.account_id }, req.session.userId);
     return res.json({ ok: true });
   }
 
@@ -1396,6 +1397,7 @@ router.delete('/messages/:id', async (req, res) => {
     await query('DELETE FROM messages WHERE id = $1', [id]);
     adjustFolderCounts(message.account_id, message.folder, -1, -wasUnread);
   }
+  imapManager.broadcast({ type: 'folder_updated', folder: message.folder, accountId: message.account_id }, req.session.userId);
   res.json({ ok: true });
 });
 

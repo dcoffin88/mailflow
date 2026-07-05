@@ -46,6 +46,16 @@ export default function MailApp() {
     return () => window.removeEventListener('resize', update);
   }, []);
 
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        window.dispatchEvent(new CustomEvent('mailflow:refresh'));
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+
   const [showShortcutHelp, setShowShortcutHelp] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const isMobile = useMobile();
