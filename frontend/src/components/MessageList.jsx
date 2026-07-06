@@ -119,7 +119,7 @@ export default function MessageList() {
   const searchFolder = (!isUnified && !searchAllFolders) ? selectedFolder : undefined;
   const undoableNotifications = notifications.filter(n => n.onUndo);
 
-  const currentLayout = LAYOUTS[layout] || LAYOUTS.classic;
+  const currentLayout = LAYOUTS[layout] || LAYOUTS.comfortable;
   const isColumn = currentLayout.direction === 'column';
   const isNarrow = !isColumn && currentLayout.listWidth <= 260;
 
