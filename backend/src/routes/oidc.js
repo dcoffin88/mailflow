@@ -336,7 +336,8 @@ oidcBrowserRouter.get('/:slug/callback', async (req, res) => {
     const subject = payload.sub;
     const issuer = payload.iss;
     const email = payload.email || null;
-    const emailVerified = payload.email_verified === true;
+    // Accept a boolean true or a stringified "true" — some IdPs emit the claim as a string.
+    const emailVerified = payload.email_verified === true || payload.email_verified === 'true';
 
     // Require verified email for login flows (skip for link, and skip if provider opts out)
     if (!emailVerified && pending.action !== 'link' && provider.require_email_verified !== false) {
@@ -474,8 +475,10 @@ oidcBrowserRouter.get('/:slug/callback', async (req, res) => {
     }
 
     if (mode === 'open') {
-      // Create a new MailFlow account from the SSO identity
-      if (!email || !emailVerified) {
+      // Create a new MailFlow account from the SSO identity. An email is always
+      // required; the *verified* requirement is opt-out via require_email_verified
+      // (matching the login_existing_only and allowed_domains checks above).
+      if (!email || (!emailVerified && provider.require_email_verified !== false)) {
         return oidcError(res, 'login', 'A verified email address is required to create an account via SSO');
       }
       await client.query('BEGIN');
