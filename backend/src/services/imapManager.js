@@ -1800,7 +1800,7 @@ export class ImapManager {
                 display_name, primary_email, emails, is_auto
               )
               VALUES ($1, $2, $3, $4, md5($4), $5, $6, $7::jsonb, true)
-              ON CONFLICT (user_id, primary_email) WHERE primary_email IS NOT NULL DO NOTHING
+              ON CONFLICT (address_book_id, primary_email) WHERE primary_email IS NOT NULL DO NOTHING
             `, [addressBookId, userId, uid, vcard, displayName, primaryEmail, emails]);
           })
       );

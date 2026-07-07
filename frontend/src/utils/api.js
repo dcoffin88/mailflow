@@ -186,6 +186,15 @@ export const api = {
   updateContact: (id, data) => request('PATCH',  `/contacts/${id}`, data),
   deleteContact: (id)       => request('DELETE', `/contacts/${id}`),
 
+  // CardDAV contact sync (Nextcloud etc.)
+  carddav: {
+    status:     ()     => request('GET',    '/carddav'),
+    connect:    (data) => request('POST',   '/carddav/connect', data),
+    update:     (data) => request('PATCH',  '/carddav', data),
+    sync:       ()     => request('POST',   '/carddav/sync'),
+    disconnect: ()     => request('DELETE', '/carddav'),
+  },
+
   // Image whitelist
   addToImageWhitelist: (entry) => request('POST', '/auth/preferences/whitelist-add', entry),
 

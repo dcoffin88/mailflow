@@ -64,8 +64,10 @@ router.get('/', async (req, res) => {
         c.id, c.uid, c.display_name, c.first_name, c.last_name,
         c.primary_email, c.emails, c.phones, c.organization,
         c.notes, c.is_auto, c.send_count, c.last_sent,
-        c.etag, c.created_at, c.updated_at
+        c.etag, c.created_at, c.updated_at,
+        (ab.source = 'carddav') AS read_only
       FROM contacts c
+      JOIN address_books ab ON ab.id = c.address_book_id
       WHERE ${conditions.join(' AND ')}
       ORDER BY
         c.is_auto ASC,
@@ -134,8 +136,10 @@ router.get('/:id', async (req, res) => {
       `SELECT c.id, c.uid, c.display_name, c.first_name, c.last_name,
               c.primary_email, c.emails, c.phones, c.organization,
               c.notes, c.photo_data, c.is_auto, c.send_count, c.last_sent,
-              c.etag, c.vcard, c.created_at, c.updated_at
+              c.etag, c.vcard, c.created_at, c.updated_at,
+              (ab.source = 'carddav') AS read_only
        FROM contacts c
+       JOIN address_books ab ON ab.id = c.address_book_id
        WHERE c.id = $1 AND c.user_id = $2`,
       [req.params.id, userId]
     );
@@ -210,13 +214,18 @@ router.patch('/:id', async (req, res) => {
   if (phones !== undefined && !Array.isArray(phones)) return res.status(400).json({ error: 'phones must be an array' });
 
   try {
-    // Load current contact
+    // Load current contact (with its book source to block edits to synced contacts)
     const cur = await query(
-      'SELECT * FROM contacts WHERE id = $1 AND user_id = $2',
+      `SELECT c.*, ab.source AS book_source FROM contacts c
+       JOIN address_books ab ON ab.id = c.address_book_id
+       WHERE c.id = $1 AND c.user_id = $2`,
       [req.params.id, userId]
     );
     if (!cur.rows.length) return res.status(404).json({ error: 'Contact not found' });
     const c = cur.rows[0];
+    if (c.book_source === 'carddav') {
+      return res.status(403).json({ error: 'This contact is synced from CardDAV and is read-only' });
+    }
 
     const newEmails    = emails    !== undefined ? emails    : c.emails;
     const newPhones    = phones    !== undefined ? phones    : c.phones;
@@ -274,6 +283,16 @@ router.patch('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const userId = req.session.userId;
   try {
+    // Block deletion of CardDAV-synced (read-only) contacts; they reappear on next sync anyway.
+    const owner = await query(
+      `SELECT ab.source FROM contacts c JOIN address_books ab ON ab.id = c.address_book_id
+       WHERE c.id = $1 AND c.user_id = $2`,
+      [req.params.id, userId]
+    );
+    if (!owner.rows.length) return res.status(404).json({ error: 'Contact not found' });
+    if (owner.rows[0].source === 'carddav') {
+      return res.status(403).json({ error: 'This contact is synced from CardDAV and is read-only' });
+    }
     const result = await query(
       'DELETE FROM contacts WHERE id = $1 AND user_id = $2 RETURNING address_book_id',
       [req.params.id, userId]

@@ -371,7 +371,7 @@ router.post('/send', async (req, res) => {
                 display_name, primary_email, emails, is_auto, send_count, last_sent
               )
               VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, false, 1, $9)
-              ON CONFLICT (user_id, primary_email) WHERE primary_email IS NOT NULL DO UPDATE
+              ON CONFLICT (address_book_id, primary_email) WHERE primary_email IS NOT NULL DO UPDATE
                 SET send_count   = contacts.send_count + 1,
                     last_sent    = $9,
                     is_auto      = false,

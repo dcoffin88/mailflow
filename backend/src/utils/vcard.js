@@ -89,8 +89,10 @@ export function parseVCard(raw) {
     const rawName = trimmed.slice(0, colonIdx).toUpperCase();
     const value   = trimmed.slice(colonIdx + 1);
 
-    // Strip parameters (e.g. "EMAIL;TYPE=WORK:..." → name = "EMAIL")
-    const name = rawName.split(';')[0];
+    // Strip parameters (e.g. "EMAIL;TYPE=WORK:..." → name = "EMAIL"), then drop an
+    // optional group prefix (e.g. "ITEM1.EMAIL" → "EMAIL") used by Apple/Nextcloud.
+    let name = rawName.split(';')[0];
+    if (name.includes('.')) name = name.slice(name.lastIndexOf('.') + 1);
     const params = rawName.includes(';') ? rawName.slice(rawName.indexOf(';') + 1) : '';
 
     switch (name) {

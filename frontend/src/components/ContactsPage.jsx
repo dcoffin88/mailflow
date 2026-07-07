@@ -540,8 +540,16 @@ function ContactDetail({ contact: c, confirmDelete, saving, error, onEdit, onDel
     <div style={{ width: '100%', maxWidth: 560, position: 'relative', animation: 'pane-fade-in var(--motion-normal) var(--ease-emphasized) both' }}>
       {/* Out of flow — top-right of this container, unaffected by any content changes */}
       <div style={{ position: 'absolute', top: 0, right: 0, display: 'flex', gap: 8 }}>
-        <ActionBtn onClick={onEdit}>{t('common.edit')}</ActionBtn>
-        <ActionBtn onClick={onDeleteRequest} danger>{t('common.delete')}</ActionBtn>
+        {c.read_only ? (
+          <span style={{ fontSize: 11, padding: '4px 10px', borderRadius: 100, background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)', border: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
+            {t('contacts.carddavBadge')}
+          </span>
+        ) : (
+          <>
+            <ActionBtn onClick={onEdit}>{t('common.edit')}</ActionBtn>
+            <ActionBtn onClick={onDeleteRequest} danger>{t('common.delete')}</ActionBtn>
+          </>
+        )}
       </div>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 18, marginBottom: 28, paddingRight: 128 }}>
         <Avatar name={c.display_name} email={c.primary_email} size={60} />
