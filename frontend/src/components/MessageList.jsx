@@ -215,6 +215,9 @@ export default function MessageList() {
   }, [categorizationActive, selectedAccountId, selectedFolder, messagesRefreshToken, setCategoryCounts]);
 
   const searchSeq = useRef(0);
+  // Bumped to force the search effect to re-run (e.g. after rules move messages) so an
+  // active search snapshot drops messages that no longer match. See #223.
+  const [searchReloadToken, setSearchReloadToken] = useState(0);
 
   // Ref that always holds the latest values needed by shortcut handlers.
   // Updated synchronously on every render so handlers are never stale.
@@ -416,7 +419,23 @@ export default function MessageList() {
       }
     }, 300);
     return () => clearTimeout(searchTimer.current);
-  }, [searchQuery, selectedAccountId, searchFolder, applyReadGuard, setIsSearching, setSearchResults]);
+  }, [searchQuery, selectedAccountId, searchFolder, searchReloadToken, applyReadGuard, setIsSearching, setSearchResults]);
+
+  // Re-run an active search (and refresh the folder view) after inbox rules run, since
+  // rules can move messages out of the searched folder and a search snapshot would
+  // otherwise keep showing them. Scoped to the explicit rules-ran event rather than the
+  // frequent mailflow:refresh (which is intentionally ignored while searching to keep
+  // results stable during background syncs). Fixes #223.
+  useEffect(() => {
+    const handler = () => {
+      // Bumps the search effect if a query is active (it no-ops on an empty query);
+      // the refresh event reloads the folder list when not searching.
+      setSearchReloadToken(t => t + 1);
+      window.dispatchEvent(new Event('mailflow:refresh'));
+    };
+    window.addEventListener('mailflow:rules-ran', handler);
+    return () => window.removeEventListener('mailflow:rules-ran', handler);
+  }, []);
 
   const loadMoreSearch = useCallback(async () => {
     if (searchLoadingMore) return;

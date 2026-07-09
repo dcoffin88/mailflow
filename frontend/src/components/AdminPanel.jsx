@@ -1932,7 +1932,7 @@ function CardDavCard() {
               <div><label style={labelStyle}>{t('admin.integrations.carddav.userLabel')}</label>
                 <input type="text" value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} placeholder={t('admin.integrations.carddav.userPh')} style={inputStyle} /></div>
               <div><label style={labelStyle}>{t('admin.integrations.carddav.passLabel')}</label>
-                <input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder={t('admin.integrations.carddav.passPh')} style={inputStyle} /></div>
+                <input type="password" autoComplete="new-password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder={t('admin.integrations.carddav.passPh')} style={inputStyle} /></div>
               <div><label style={labelStyle}>{t('admin.integrations.carddav.dupLabel')}</label>
                 <select value={form.dupMode} onChange={e => setForm(f => ({ ...f, dupMode: e.target.value }))} style={{ ...inputStyle, cursor: 'pointer' }}>
                   <option value="separate">{t('admin.integrations.carddav.dupSeparate')}</option>
@@ -2272,7 +2272,7 @@ function IntegrationsTab() {
                 </div>
 
                 <Field label={t('admin.integrations.microsoft.clientSecret')} required>
-                  <input type="password" value={msForm.clientSecret}
+                  <input type="password" autoComplete="new-password" value={msForm.clientSecret}
                     onChange={e => setMsForm(f => ({ ...f, clientSecret: e.target.value }))}
                     placeholder={t('admin.integrations.microsoft.clientSecretPh')}
                     style={inputStyle}
@@ -2539,6 +2539,11 @@ function IntegrationsTab() {
                       </label>
                       <input
                         type="password"
+                        // Suppress browser/password-manager autofill: without this, a lone
+                        // password field makes Chrome autofill the saved login email into
+                        // the nearest text field — the settings search box — which flips the
+                        // panel to search results and hides this form. Fixes #225.
+                        autoComplete="new-password"
                         value={tdToken}
                         onChange={e => setTdToken(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && !tdConnecting && tdToken.trim() && handleTdConnect()}
@@ -3095,6 +3100,7 @@ function SSOTab() {
             <Field label={editing === 'new' ? t('admin.sso.clientSecretNew') : t('admin.sso.clientSecretEdit')} required={editing === 'new'}>
               <input
                 type="password"
+                autoComplete="new-password"
                 value={form.client_secret}
                 onChange={e => setForm(f => ({ ...f, client_secret: e.target.value }))}
                 placeholder={editing === 'new' ? t('admin.sso.clientSecretPhNew') : t('admin.sso.clientSecretPhEdit')}
@@ -4925,6 +4931,10 @@ function RulesTab() {
     try {
       const result = await api.runRules();
       setRunResult(result);
+      // Rules may have moved messages between folders; tell the message list to re-run
+      // any active search and refresh the folder view so affected messages leave stale
+      // results (a search snapshot does not otherwise update on its own). Fixes #223.
+      window.dispatchEvent(new Event('mailflow:rules-ran'));
     } catch {
       setRunError(t('admin.rules.runError'));
     } finally {
@@ -6563,6 +6573,7 @@ function SecurityTab() {
             <form onSubmit={disableTotp} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <input
                 type="password"
+                autoComplete="current-password"
                 value={disablePassword}
                 onChange={e => setDisablePassword(e.target.value)}
                 autoFocus
