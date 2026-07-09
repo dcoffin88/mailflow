@@ -122,7 +122,17 @@ function normalizeTo(arr) {
   return arr.map(t => {
     if (typeof t === 'string') return t;
     if (t && (t.email || t.name)) {
-      if (t.name && t.email) return `${t.name} <${t.email}>`;
+      if (t.name && t.email) {
+        // Quote display names that contain characters parseChips treats as delimiters
+        // (comma) or address syntax (< > "), so a name like "Lastname, FirstName" stays
+        // a single recipient instead of splitting into two. Embedded quotes are stripped
+        // rather than escaped so the quote-aware splitter never miscounts (backslash
+        // escapes aren't handled there); a double-quote inside a display name is
+        // vanishingly rare and cosmetic. The backend (parseAddress / nodemailer) parses
+        // the quoted form correctly. Fixes #224.
+        const name = /[",<>]/.test(t.name) ? `"${t.name.replace(/"/g, '')}"` : t.name;
+        return `${name} <${t.email}>`;
+      }
       return t.email || t.name;
     }
     return '';
