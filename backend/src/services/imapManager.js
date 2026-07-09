@@ -35,6 +35,15 @@ const BODY_PREFETCH_PARTS = ['1', '1.1', '1.2', '2', '2.1', '2.2', '1.1.1', '1.2
 // deprioritising background traffic whenever the user is actively reading mail.
 const QUIET_WINDOW_MS = 8000;
 
+// Circuit-breaker backoff for the snippet indexer. When a run indexes nothing because
+// the provider keeps refusing the extra connection (e.g. iCloud's cap on simultaneous
+// IMAP connections per account), skip that account for an exponentially growing window
+// instead of letting the 10-minute scheduler reopen competing connections every tick —
+// which starves live click-time body fetches. Base 10 min, doubling, capped at 2 h;
+// any real indexing progress clears the backoff so a recovered account resumes promptly.
+const SNIPPET_BACKOFF_BASE_MS = 10 * 60 * 1000;
+const SNIPPET_BACKOFF_MAX_MS = 2 * 60 * 60 * 1000;
+
 // Unicode bidi override/embedding characters that can visually reverse a filename,
 // making "malware.exe" display as "malware.pdf" to the user.
 // U+202A-U+202E: LRE, RLE, PDF, LRO, RLO
@@ -582,6 +591,7 @@ export class ImapManager {
     this.connectingAccounts = new Set(); // prevent concurrent connectAccount calls for same account
     this.userSyncIntervalMs = new Map(); // userId -> interval ms (user-configurable)
     this.snippetIndexerRunning = new Set(); // accountId — prevent duplicate snippet-index runs
+    this.snippetBackoff = new Map();        // accountId -> { failures, until } circuit breaker
     this.lastUserActivity = new Map();      // accountId -> ms timestamp of last live body fetch
     this.syncTickCount = new Map(); // accountId -> successful sync ticks (for reconcile scheduling)
     this._flagDebounceTimers   = new Map(); // accountId -> debounce timer for flag-change syncs
@@ -627,6 +637,8 @@ export class ImapManager {
       try {
         for (const accountId of this.connections.keys()) {
           if (this.snippetIndexerRunning.has(accountId)) continue;
+          const bo = this.snippetBackoff.get(accountId);
+          if (bo && Date.now() < bo.until) continue;
           const backlog = await query(
             "SELECT 1 FROM messages WHERE account_id = $1 AND (snippet IS NULL OR snippet = '') LIMIT 1",
             [accountId]
@@ -1977,6 +1989,10 @@ export class ImapManager {
     if (!cfg.snippetIndex) return;
 
     if (this.snippetIndexerRunning.has(account.id)) return;
+    // Honor the circuit breaker for every caller (scheduler, post-connect, post-sync)
+    // so a persistently-failing account is not retried on each reconnect either.
+    const backoff = this.snippetBackoff.get(account.id);
+    if (backoff && Date.now() < backoff.until) return;
     this.snippetIndexerRunning.add(account.id);
 
     // Rate limit: conservative batches so this doesn't affect normal usage.
@@ -1987,6 +2003,10 @@ export class ImapManager {
     const MAX_BATCHES_PER_RUN = 200; // 10,000 messages max per session
 
     let siClient = null;
+    // Hoisted so the finally can distinguish a productive run from one that failed
+    // without indexing anything (the case that should trip the circuit breaker).
+    let batchCount = 0;
+    let failed = false;
     try {
       // Check if there's anything to index before opening a connection
       const countResult = await query(
@@ -2023,7 +2043,6 @@ export class ImapManager {
         [account.id]
       );
 
-      let batchCount = 0;
       let consecutiveErrors = 0;
       for (const { folder } of foldersResult.rows) {
         let done = false;
@@ -2086,6 +2105,7 @@ export class ImapManager {
             console.error(`Snippet indexer batch error ${logAccount(account)}/${folder}:`, err.message);
             await new Promise(r => setTimeout(r, cfg.errorDelay));
             if (consecutiveErrors >= 3) {
+              failed = true;
               console.log(`Snippet indexer aborting for ${logAccount(account)} after ${consecutiveErrors} consecutive errors — will resume on next startup`);
               return;
             }
@@ -2102,10 +2122,23 @@ export class ImapManager {
 
       console.log(`Snippet indexer complete for ${logAccount(account)} (${batchCount} batches)`);
     } catch (err) {
+      failed = true;
       console.error(`Snippet indexer error ${logAccount(account)}:`, err.message);
     } finally {
       if (siClient) { try { await siClient.logout(); } catch { /* already disconnected */ } }
       this.snippetIndexerRunning.delete(account.id);
+      // Circuit breaker: a run that failed without indexing a single batch (e.g. iCloud
+      // refusing the extra connection at its per-account limit) backs off exponentially
+      // so the scheduler stops reopening competing IMAP connections that slow live body
+      // fetches. Any progress — or a clean/no-work finish — clears the backoff.
+      if (failed && batchCount === 0) {
+        const failures = (this.snippetBackoff.get(account.id)?.failures || 0) + 1;
+        const delay = Math.min(SNIPPET_BACKOFF_BASE_MS * 2 ** (failures - 1), SNIPPET_BACKOFF_MAX_MS);
+        this.snippetBackoff.set(account.id, { failures, until: Date.now() + delay });
+        console.log(`Snippet indexer backing off ${logAccount(account)} for ${Math.round(delay / 60000)}m (failure #${failures})`);
+      } else {
+        this.snippetBackoff.delete(account.id);
+      }
     }
   }
 
