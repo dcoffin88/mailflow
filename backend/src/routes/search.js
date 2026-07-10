@@ -67,6 +67,40 @@ function negateCond(sql) {
   return `NOT COALESCE((${sql}), false)`;
 }
 
+export function resolveSearchFolderScope(filters, folderParam = '') {
+  let folderScope;
+  let folderFuzzy = false; // in:<name> matches loosely; the folder param is exact
+
+  for (const f of filters) {
+    if (f.key !== 'in') continue;
+    if (f.value === 'all') { folderScope = null; }
+    else { folderScope = f.value; folderFuzzy = true; }
+  }
+
+  if (folderScope === undefined) {
+    folderScope = (folderParam || '').trim() || null;
+    folderFuzzy = false;
+  }
+
+  return { folderScope, folderFuzzy };
+}
+
+export function shouldExcludeTrashFromSearch(folderScope) {
+  return folderScope === null;
+}
+
+export function trashFolderExclusionCondition() {
+  return `NOT EXISTS (
+        SELECT 1
+        FROM folders f
+        WHERE f.account_id = m.account_id
+          AND f.path = m.folder
+          AND (f.special_use = '\\Trash'
+               OR lower(f.name) LIKE '%trash%'
+               OR lower(f.name) LIKE '%deleted%')
+      )`;
+}
+
 router.get('/', searchLimiter, async (req, res) => {
   const { q, accountId, limit = 50, offset = 0 } = req.query;
   const trimmed = (q || '').trim();
@@ -95,8 +129,6 @@ router.get('/', searchLimiter, async (req, res) => {
   // no in: operator was given, so we fall back to the param below.
   //   folderScope === null   → search all folders
   //   folderScope === string → restrict to that folder
-  let folderScope;
-  let folderFuzzy = false; // in:<name> matches loosely; the folder param is exact
 
   // ── Operator filters ──────────────────────────────────────────────────────
 
@@ -104,8 +136,6 @@ router.get('/', searchLimiter, async (req, res) => {
     // in: controls scope rather than adding a row condition; negation is
     // meaningless here so it's ignored.
     if (f.key === 'in') {
-      if (f.value === 'all') { folderScope = null; }
-      else { folderScope = f.value; folderFuzzy = true; }
       continue;
     }
 
@@ -168,11 +198,8 @@ router.get('/', searchLimiter, async (req, res) => {
   // bare `in:inbox` (or a lone folder param) never dumps an entire folder.
   if (!conditions.length) return res.json({ messages: [], query: q });
 
-  // Resolve folder scope: in: operator already set it; otherwise use the param.
-  if (folderScope === undefined) {
-    folderScope = (req.query.folder || '').trim() || null;
-    folderFuzzy = false;
-  }
+  // Resolve folder scope: in: operator wins; otherwise use the param.
+  const { folderScope, folderFuzzy } = resolveSearchFolderScope(filters, req.query.folder || '');
   if (folderScope) {
     if (folderFuzzy) {
       // in:<name> — case-insensitive match on a folder named exactly that, or a
@@ -186,6 +213,11 @@ router.get('/', searchLimiter, async (req, res) => {
       params.push(folderScope);
       conditions.push(`m.folder = $${p++}`);
     }
+  } else if (shouldExcludeTrashFromSearch(folderScope)) {
+    // Deleting moves mail into Trash, where it remains searchable by explicit
+    // folder queries like in:trash. Keep ordinary all-folder searches from
+    // resurfacing freshly-deleted messages after the optimistic UI guard expires.
+    conditions.push(trashFolderExclusionCondition());
   }
 
   const off = Math.max(0, parseInt(offset) || 0);

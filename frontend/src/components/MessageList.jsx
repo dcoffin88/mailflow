@@ -117,6 +117,7 @@ export default function MessageList() {
   // user toggled "search all folders". An in: operator in the query overrides this
   // server-side. undefined = search all folders.
   const searchFolder = (!isUnified && !searchAllFolders) ? selectedFolder : undefined;
+  const searchPageSize = Math.max(1, Math.min(Number(pageSize) || 50, 200));
   const undoableNotifications = notifications.filter(n => n.onUndo);
 
   const currentLayout = LAYOUTS[layout] || LAYOUTS.comfortable;
@@ -159,6 +160,7 @@ export default function MessageList() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchHasMore, setSearchHasMore] = useState(false);
   const [searchLoadingMore, setSearchLoadingMore] = useState(false);
+  const searchFetchedOffsetRef = useRef(0);
   const listRef = useRef(null);
   const searchInputRef = useRef(null); // for focusSearch shortcut
   const pendingDeleteTimers = useRef(new Map()); // id/thread key -> pending delete metadata
@@ -394,13 +396,13 @@ export default function MessageList() {
   }, [selectedAccountId, selectedFolder, unreadOnly, activeCategory, searchQuery, categorizationEnabled, selectedAccount?.categorization_enabled, applyReadGuard, setHasMoreMessages, setMessages, setMessagesOffset, setMessagesTotal]);
 
   // Search
-  const SEARCH_PAGE = 50;
   useEffect(() => {
     clearTimeout(searchTimer.current);
     if (!searchQuery.trim()) {
       setIsSearching(false);
       setSearchResults([]);
       setSearchHasMore(false);
+      searchFetchedOffsetRef.current = 0;
       return;
     }
     setIsSearching(true);
@@ -408,10 +410,11 @@ export default function MessageList() {
     const seq = ++searchSeq.current;
     searchTimer.current = setTimeout(async () => {
       try {
-        const data = await api.search(searchQuery, selectedAccountId || undefined, { offset: 0, folder: searchFolder });
+        const data = await api.search(searchQuery, selectedAccountId || undefined, { offset: 0, limit: searchPageSize, folder: searchFolder });
         if (searchSeq.current !== seq) return;
+        searchFetchedOffsetRef.current = data.messages.length;
         setSearchResults(applyReadGuard(data.messages));
-        setSearchHasMore(data.messages.length === SEARCH_PAGE);
+        setSearchHasMore(data.messages.length === searchPageSize);
       } catch (err) {
         if (searchSeq.current === seq) console.error('Search failed:', err);
       } finally {
@@ -419,7 +422,7 @@ export default function MessageList() {
       }
     }, 300);
     return () => clearTimeout(searchTimer.current);
-  }, [searchQuery, selectedAccountId, searchFolder, searchReloadToken, applyReadGuard, setIsSearching, setSearchResults]);
+  }, [searchQuery, selectedAccountId, searchFolder, searchPageSize, searchReloadToken, applyReadGuard, setIsSearching, setSearchResults]);
 
   // Re-run an active search (and refresh the folder view) after inbox rules run, since
   // rules can move messages out of the searched folder and a search snapshot would
@@ -442,19 +445,43 @@ export default function MessageList() {
     const qSnapshot = searchQuery; // capture before async gap
     setSearchLoadingMore(true);
     try {
-      const offset = useStore.getState().searchResults.length;
-      const data = await api.search(qSnapshot, selectedAccountId || undefined, { offset, folder: searchFolder });
+      const offset = searchFetchedOffsetRef.current;
+      const data = await api.search(qSnapshot, selectedAccountId || undefined, { offset, limit: searchPageSize, folder: searchFolder });
       // Discard results if the query changed while we were fetching
       if (useStore.getState().searchQuery !== qSnapshot) return;
+      searchFetchedOffsetRef.current = offset + data.messages.length;
       const current = useStore.getState().searchResults;
       useStore.setState({ searchResults: [...current, ...applyReadGuard(data.messages)] });
-      setSearchHasMore(data.messages.length === SEARCH_PAGE);
+      setSearchHasMore(data.messages.length === searchPageSize);
     } catch (err) {
       console.error('Search load more failed:', err);
     } finally {
       setSearchLoadingMore(false);
     }
-  }, [searchQuery, selectedAccountId, searchFolder, searchLoadingMore, applyReadGuard]);
+  }, [searchQuery, selectedAccountId, searchFolder, searchPageSize, searchLoadingMore, applyReadGuard]);
+
+  const prefetchSearchAfterRemoval = useCallback(async (offset) => {
+    const qSnapshot = useStore.getState().searchQuery;
+    if (!qSnapshot.trim()) return;
+    try {
+      const data = await api.search(qSnapshot, selectedAccountId || undefined, { offset, limit: searchPageSize, folder: searchFolder });
+      if (useStore.getState().searchQuery !== qSnapshot) return;
+      searchFetchedOffsetRef.current = Math.max(searchFetchedOffsetRef.current, offset + data.messages.length);
+      const additions = applyReadGuard(data.messages);
+      if (!additions.length) {
+        setSearchHasMore(data.messages.length === searchPageSize);
+        return;
+      }
+      useStore.setState(state => {
+        const existing = new Set(state.searchResults.map(m => m.id));
+        const missing = additions.filter(m => m && !existing.has(m.id));
+        return missing.length ? { searchResults: [...state.searchResults, ...missing] } : {};
+      });
+      setSearchHasMore(data.messages.length === searchPageSize);
+    } catch (err) {
+      console.error('Search prefetch after delete failed:', err);
+    }
+  }, [selectedAccountId, searchFolder, searchPageSize, applyReadGuard]);
 
   // Infinite scroll + scroll-to-top visibility
   const handleScroll = useCallback(() => {
@@ -1273,8 +1300,13 @@ export default function MessageList() {
 
   const handleBulkDelete = useCallback((ids, msgs) => {
     const key = `bulk:${ids[0]}`;
+    const searchOffsetBeforeRemoval = searchFetchedOffsetRef.current;
+    const shouldPrefetchSearch = Boolean(useStore.getState().searchQuery.trim() && searchHasMore);
     ids.forEach(id => setPendingDelete(id));
     ids.forEach(id => removeMessage(id));
+    if (shouldPrefetchSearch) {
+      prefetchSearchAfterRemoval(searchOffsetBeforeRemoval);
+    }
     msgs.forEach(msg => {
       const delta = parseInt(msg.unread_count) || (msg.is_read ? 0 : 1);
       if (delta > 0) decrementUnread(msg.account_id, delta);
@@ -1308,6 +1340,9 @@ export default function MessageList() {
         });
         addNotification({ type: 'error', title: t('messageList.bulkDeleted.failTitle'), body: t('messageList.bulkDeleted.failBody', { count: failedIds.length }) });
       }
+      if (useStore.getState().searchQuery.trim()) {
+        setSearchReloadToken(token => token + 1);
+      }
     }, 4500);
     pendingDeleteTimers.current.set(key, { timer, message: msgs[0], ids });
     addNotification({
@@ -1325,7 +1360,7 @@ export default function MessageList() {
         });
       },
     });
-  }, [removeMessage, decrementUnread, incrementUnread, addNotification, t]);
+  }, [searchHasMore, removeMessage, prefetchSearchAfterRemoval, decrementUnread, incrementUnread, addNotification, t]);
 
   const handleBulkMove = useCallback((ids, msgs, folder) => {
     ids.forEach(id => removeMessage(id));

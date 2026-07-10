@@ -5,7 +5,12 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('../services/db.js', () => ({ query: vi.fn() }));
 vi.mock('../middleware/auth.js', () => ({ requireAuth: vi.fn() }));
 
-import { parseSearchQuery } from './search.js';
+import {
+  parseSearchQuery,
+  resolveSearchFolderScope,
+  shouldExcludeTrashFromSearch,
+  trashFolderExclusionCondition,
+} from './search.js';
 
 describe('parseSearchQuery', () => {
   it('treats bare words as free-text terms', () => {
@@ -89,5 +94,37 @@ describe('parseSearchQuery', () => {
     const raw = 'from:a to:b subject:c has:attachment is:starred after:2024-01-01 before:2024-12-31 in:archive';
     const keys = parseSearchQuery(raw).filters.map(f => f.key);
     expect(keys).toEqual(['from', 'to', 'subject', 'has', 'is', 'after', 'before', 'in']);
+  });
+
+  it('scopes search to the client folder param when no in: operator is present', () => {
+    const { filters } = parseSearchQuery('subject:newsletter');
+    expect(resolveSearchFolderScope(filters, 'INBOX')).toEqual({
+      folderScope: 'INBOX',
+      folderFuzzy: false,
+    });
+  });
+
+  it('lets in: override the client folder param', () => {
+    const { filters } = parseSearchQuery('in:trash subject:newsletter');
+    expect(resolveSearchFolderScope(filters, 'INBOX')).toEqual({
+      folderScope: 'trash',
+      folderFuzzy: true,
+    });
+  });
+
+  it('excludes trash-like folders from ordinary all-folder searches', () => {
+    const { filters } = parseSearchQuery('subject:newsletter');
+    const { folderScope } = resolveSearchFolderScope(filters);
+    expect(folderScope).toBeNull();
+    expect(shouldExcludeTrashFromSearch(folderScope)).toBe(true);
+    expect(trashFolderExclusionCondition()).toContain('NOT EXISTS');
+    expect(trashFolderExclusionCondition()).toContain('%trash%');
+    expect(trashFolderExclusionCondition()).toContain('%deleted%');
+  });
+
+  it('keeps explicit folder searches eligible to find trash messages', () => {
+    const { filters } = parseSearchQuery('in:trash subject:newsletter');
+    const { folderScope } = resolveSearchFolderScope(filters);
+    expect(shouldExcludeTrashFromSearch(folderScope)).toBe(false);
   });
 });
