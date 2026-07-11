@@ -128,15 +128,16 @@ const BODY_PREFETCH_PARTS = ['1', '1.1', '1.2', '2', '2.1', '2.2', '1.1.1', '1.2
 const FLAG_SCAN_TIMEOUT_MS = 20000;
 const FLAG_SCAN_TIMED_OUT = Symbol('flagScanTimedOut');
 
-// Upper bound on how far back the delta flag scan looks. A CHANGEDSINCE fetch over the whole
-// mailbox ('1:*') makes the SERVER evaluate every message's modseq; on a large mailbox (e.g. a
-// 28k-message iCloud INBOX) that scan alone exceeds FLAG_SCAN_TIMEOUT_MS, so it defers every
-// tick, never completes, and the watermark never advances. Restricting the scan to the most
-// recent N UIDs keeps it fast — recent messages are the ones whose flags actually change, and
-// the reactive IDLE flag path (_syncFlagsForRange) already covers live read/star events. A flag
-// change on a message older than this window won't be caught by the periodic scan, but that gap
-// already exists (the IDLE path only looks at the last 200, and the unbounded scan currently
-// never finishes) — so this only makes the common case actually work.
+// Upper bound on how far back the delta flag scan looks. iCloud advertises CONDSTORE (so we take
+// the delta path) but IGNORES the changedSince fetch modifier — it returns EVERY message in the
+// requested range. Since the scan only pulls uid+flags (cheap), this window mainly caps that
+// worst case so a huge mailbox doesn't fetch tens of thousands of records per tick. Recent
+// messages are the ones whose flags change, and the reactive IDLE flag path (_syncFlagsForRange)
+// already covers live read/star events, so the window is a generous backstop. A flag change on a
+// message older than this window won't be caught by the periodic scan, but that gap already
+// exists (the IDLE path only looks at the last 200) and matters only for cross-device changes to
+// very old mail. Servers that honor changedSince (PurelyMail, Gmail) return only what changed
+// regardless of the window.
 const DELTA_SCAN_UID_WINDOW = 5000;
 
 // How long (ms) user must be idle before background IMAP jobs (snippet indexer, folder
@@ -1625,6 +1626,53 @@ export class ImapManager {
     }
   }
 
+  // Bulk-apply is_read/is_starred from a fetched {uid, isRead, isStarred}[] onto existing rows
+  // in `folder`. Preserves the 30-second optimistic-change guard so a just-made local read/star
+  // isn't clobbered by a stale server value, and only touches rows whose flags actually differ.
+  // Returns the number of rows changed. Shared by _syncFlagsForRange and the delta flag scan so
+  // the flag-conflict logic lives in exactly one place.
+  async _applyFlagUpdates(account, folder, flagsToUpdate) {
+    if (!flagsToUpdate.length) return 0;
+    const uids    = flagsToUpdate.map(f => f.uid);
+    const reads   = flagsToUpdate.map(f => f.isRead);
+    const starred = flagsToUpdate.map(f => f.isStarred);
+    const result = await query(`
+      UPDATE messages SET
+        is_read = CASE
+          WHEN messages.read_changed_at IS NOT NULL
+               AND NOW() - messages.read_changed_at < interval '30 seconds'
+          THEN messages.is_read
+          ELSE updates.is_read
+        END,
+        is_starred = CASE
+          WHEN messages.star_changed_at IS NOT NULL
+               AND NOW() - messages.star_changed_at < interval '30 seconds'
+          THEN messages.is_starred
+          ELSE updates.is_starred
+        END
+      FROM (
+        SELECT unnest($1::bigint[])  AS uid,
+               unnest($2::boolean[]) AS is_read,
+               unnest($3::boolean[]) AS is_starred
+      ) AS updates
+      WHERE messages.account_id = $4
+        AND messages.folder = $5
+        AND messages.uid = updates.uid
+        AND (
+          (
+            messages.star_changed_at IS NULL
+            OR NOW() - messages.star_changed_at >= interval '30 seconds'
+          ) AND messages.is_starred != updates.is_starred
+          OR (
+            messages.read_changed_at IS NULL
+            OR NOW() - messages.read_changed_at >= interval '30 seconds'
+          ) AND messages.is_read != updates.is_read
+        )`,
+      [uids, reads, starred, account.id, folder]
+    );
+    return result.rowCount;
+  }
+
   // Lightweight flag-only sync: fetch uid+flags for the last 200 messages in INBOX
   // and bulk-update is_read / is_starred in the DB.
   //
@@ -1666,47 +1714,9 @@ export class ImapManager {
 
           if (flagsToUpdate.length === 0) return;
 
-          const uids    = flagsToUpdate.map(f => f.uid);
-          const reads   = flagsToUpdate.map(f => f.isRead);
-          const starred = flagsToUpdate.map(f => f.isStarred);
-
-          const result = await query(`
-            UPDATE messages SET
-              is_read = CASE
-                WHEN messages.read_changed_at IS NOT NULL
-                     AND NOW() - messages.read_changed_at < interval '30 seconds'
-                THEN messages.is_read
-                ELSE updates.is_read
-              END,
-              is_starred = CASE
-                WHEN messages.star_changed_at IS NOT NULL
-                     AND NOW() - messages.star_changed_at < interval '30 seconds'
-                THEN messages.is_starred
-                ELSE updates.is_starred
-              END
-            FROM (
-              SELECT unnest($1::bigint[])  AS uid,
-                     unnest($2::boolean[]) AS is_read,
-                     unnest($3::boolean[]) AS is_starred
-            ) AS updates
-            WHERE messages.account_id = $4
-              AND messages.folder = 'INBOX'
-              AND messages.uid = updates.uid
-              AND (
-                (
-                  messages.star_changed_at IS NULL
-                  OR NOW() - messages.star_changed_at >= interval '30 seconds'
-                ) AND messages.is_starred != updates.is_starred
-                OR (
-                  messages.read_changed_at IS NULL
-                  OR NOW() - messages.read_changed_at >= interval '30 seconds'
-                ) AND messages.is_read != updates.is_read
-              )`,
-            [uids, reads, starred, account.id]
-          );
-
-          if (result.rowCount > 0) {
-            console.log(`Flag sync: ${result.rowCount} flag change(s) for ${logAccount(account)}, broadcasting`);
+          const changed = await this._applyFlagUpdates(account, 'INBOX', flagsToUpdate);
+          if (changed > 0) {
+            console.log(`Flag sync: ${changed} flag change(s) for ${logAccount(account)}, broadcasting`);
             this.broadcast({ type: 'flags_synced', accountId: account.id }, account.user_id);
           }
         } finally {
@@ -2036,19 +2046,20 @@ export class ImapManager {
         // nothing lost — rather than burning the whole-sync budget and forcing a reconnect.
         let flagScanComplete = true;
         if (plan === 'delta') {
-          // CHANGEDSINCE returns messages whose modseq advanced past our watermark — flag changes
-          // on existing mail (plus any new mail, idempotent since the UID phase already inserted
-          // it). Scoped to a recent UID window (DELTA_SCAN_UID_WINDOW) so the SERVER-side scan
-          // stays fast on large mailboxes instead of evaluating every message and deferring every
-          // tick; new-mail safety is the UID phase, not this. A tiny mailbox clamps to 1:* anyway.
-          const insertedBefore = insertedCount;
-          let deltaSeen = 0;
-          const deltaRange = `${Math.max(1, maxKnownUid - DELTA_SCAN_UID_WINDOW + 1)}:*`;
+          // Flag-only scan. The only thing that changes on an EXISTING message is its flags
+          // (read/star) — new mail is the UID phase's job — so fetch just uid+flags over a recent
+          // UID window and bulk-apply. Deliberately lightweight: iCloud advertises CONDSTORE (so
+          // we land here) but IGNORES changedSince and returns the WHOLE window; with uid+flags
+          // that is a cheap fetch + one bulk UPDATE (~a second) instead of thousands of full-
+          // envelope fetches and upserts. changedSince still trims the set on servers that honor
+          // it (PurelyMail, Gmail). A tiny mailbox clamps to 1:* anyway.
+          const deltaLow = Math.max(1, maxKnownUid - DELTA_SCAN_UID_WINDOW + 1);
+          const deltaStartedAt = Date.now();
+          const flagsToUpdate = [];
           try {
             const scan = (async () => {
-              for await (const msg of client.fetch(deltaRange, fetchQuery, { uid: true, changedSince: BigInt(storedModseq) })) {
-                await processMsg(msg);
-                deltaSeen++;
+              for await (const msg of client.fetch(`${deltaLow}:*`, { uid: true, flags: true }, { uid: true, changedSince: BigInt(storedModseq) })) {
+                flagsToUpdate.push({ uid: msg.uid, isRead: msg.flags.has('\\Seen'), isStarred: msg.flags.has('\\Flagged') });
               }
             })();
             // If the timeout wins the race, the fetch keeps running until ImapFlow's commandTimeout
@@ -2068,12 +2079,16 @@ export class ImapManager {
             flagScanComplete = false;
             console.warn(`Delta flag scan skipped for ${logAccount(account)}/${folder}: stale range after concurrent expunge`);
           }
-          // Existing messages returned by CHANGEDSINCE (not newly inserted) are flag/state
-          // changes with no new_messages event of their own — nudge the UI so a read-elsewhere
-          // reflects live instead of staying stale until a manual reload.
-          const existingChanged = deltaSeen - (insertedCount - insertedBefore);
-          if (existingChanged > 0) {
-            this.broadcast({ type: 'flags_synced', accountId: account.id }, account.user_id);
+          // Apply ONLY on a complete scan: a deferred scan's list is still being mutated by the
+          // abandoned background fetch (reading it would race) and its watermark isn't advanced,
+          // so the next tick redoes it. A flag change has no new_messages event of its own, so a
+          // flags_synced nudge lets a read-elsewhere reflect live instead of staying stale.
+          if (flagScanComplete) {
+            const changed = await this._applyFlagUpdates(account, folder, flagsToUpdate);
+            logger.debug(`Delta flag scan OK for ${logAccount(account)}/${folder}: ${flagsToUpdate.length} fetched, ${changed} changed in ${Date.now() - deltaStartedAt}ms (uid>=${deltaLow}), modseq ${storedModseq}->${serverModseq}`);
+            if (changed > 0) {
+              this.broadcast({ type: 'flags_synced', accountId: account.id }, account.user_id);
+            }
           }
         } else if (plan === 'full') {
           // No usable modseq baseline (first sync, UIDVALIDITY reset, or a server without
