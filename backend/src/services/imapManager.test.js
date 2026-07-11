@@ -70,7 +70,6 @@ describe('providerProfile — host detection', () => {
     expect(p.speculativeFetch).toBe(false);
     expect(p.preferFreshBodyFetch).toBe(true);
     expect(p.freshInboxSync).toBe(true);
-    expect(p.freshInboxUidPoll).toBe(true);
     expect(p.autoBackfillExistingOnConnect).toBe(false);
     expect(p.usesIdle).toBe(false);
     expect(p.pushesFlags).toBe(false);

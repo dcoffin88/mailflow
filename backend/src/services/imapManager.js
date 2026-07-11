@@ -118,6 +118,16 @@ export function planModseqSync({ storedModseq, serverModseq, uidValidityChanged 
 // Body parts that cover ~99% of real-world email structures (used for full body caching)
 const BODY_PREFETCH_PARTS = ['1', '1.1', '1.2', '2', '2.1', '2.2', '1.1.1', '1.2.1'];
 
+// The flag-change scan in syncMessages gets its OWN budget, shorter than the whole-sync
+// wall-clock. When a provider throttles the connection (iCloud right after a startup backfill
+// burst), the flag scan crawls — but new mail was already caught by the UID phase, so a slow
+// flag scan must not burn the full sync budget and force a reconnect (which piles another
+// connection onto the throttled account and feeds the churn). Instead it defers to the next
+// tick WITHOUT advancing the modseq watermark, so no flag change is lost. The sentinel is
+// resolved (not thrown) by the race so it's never confused with a real fetch error.
+const FLAG_SCAN_TIMEOUT_MS = 20000;
+const FLAG_SCAN_TIMED_OUT = Symbol('flagScanTimedOut');
+
 // How long (ms) user must be idle before background IMAP jobs (snippet indexer, folder
 // body prefetch) resume after a live body fetch. Keeps click-time fetches snappy by
 // deprioritising background traffic whenever the user is actively reading mail.
@@ -366,8 +376,6 @@ function safeDate(d) {
 //                      Disabled for providers that throttle BODY[] fetches at scale.
 // usesIdle:            keep the persistent sync connection in IMAP IDLE for push events.
 // maxSyncIntervalMs:   clamp the user's sync interval for providers whose IDLE is unreliable.
-// freshInboxUidPoll:   on fresh-login sync, first do a cheap UID search and only run the
-//                      heavier FETCH sync when the server actually has new UIDs.
 // pushesFlags:         server pushes flag changes via IDLE; false = poll every sync tick.
 // flagPollEveryTicks:  for non-push flag providers, poll flags every N successful sync ticks.
 // snippetIndex:        run the background snippet indexer after backfill.
@@ -442,7 +450,6 @@ const PROVIDERS = {
     speculativeFetch: false,
     preferFreshBodyFetch: true,
     freshInboxSync: true,
-    freshInboxUidPoll: true,
     autoBackfillExistingOnConnect: false,
     maxSyncIntervalMs: 10000,
     flagPollEveryTicks: 6,
@@ -1410,14 +1417,12 @@ export class ImapManager {
       client = new ImapFlow(makeClientCfg(fresh, resolved, { policy }));
       client.on('error', () => {}); // close() below intentionally aborts timed-out sockets
       await raceTimeout(client.connect(), 30000, 'Fresh sync connect');
-      if (providerProfile(account).freshInboxUidPoll) {
-        const pollResult = await raceTimeout(
-          this._pollInboxUidWatermark(account, client),
-          15000,
-          'Fresh UID poll',
-        );
-        if (!pollResult.hasNewUid) return pollResult;
-      }
+      // syncMessages' own CONDSTORE modseq check is the "did anything change?" gate: it returns
+      // cheaply when HIGHESTMODSEQ is unchanged, and runs the delta fetch on ANY change. We used
+      // to pre-gate on a UID-watermark search here, but that only detected NEW mail — a flag
+      // change (read/star on another device) has no new UID, so it was skipped entirely and the
+      // desktop stayed stale until a manual refresh. modseq bumps on flag changes too, so
+      // deferring the decision to syncMessages catches them.
       return await raceTimeout(
         this.syncMessages(account, client, 'INBOX', 20, false, true),
         55000,
@@ -1425,33 +1430,6 @@ export class ImapManager {
       );
     } finally {
       if (client) { try { client.close(); } catch { /* already closed */ } }
-    }
-  }
-
-  async _pollInboxUidWatermark(account, client) {
-    const lock = await client.getMailboxLock('INBOX');
-    try {
-      const mailbox = client.mailbox;
-      if (!mailbox || mailbox.exists === 0) {
-        await query('UPDATE email_accounts SET last_sync = NOW() WHERE id = $1', [account.id]);
-        return { insertedCount: 0, broadcastedNewMessages: false, hasNewUid: false };
-      }
-
-      const { rows: [{ max_uid }] } = await query(
-        "SELECT COALESCE(MAX(uid), 0) as max_uid FROM messages WHERE account_id = $1 AND folder = 'INBOX'",
-        [account.id]
-      );
-      const maxKnownUid = Number(max_uid);
-      if (maxKnownUid <= 0) return { hasNewUid: true };
-
-      const above = await client.search({ uid: `${maxKnownUid + 1}:*` }, { uid: true });
-      const hasNewUid = (above || []).some(uid => Number(uid) > maxKnownUid);
-      if (hasNewUid) return { hasNewUid: true };
-
-      await query('UPDATE email_accounts SET last_sync = NOW() WHERE id = $1', [account.id]);
-      return { insertedCount: 0, broadcastedNewMessages: false, hasNewUid: false };
-    } finally {
-      lock.release();
     }
   }
 
@@ -2017,80 +1995,112 @@ export class ImapManager {
           }
         };
 
-        // Choose the fetch strategy from the CONDSTORE modseq state (pure/testable helper).
+        // Fetch strategy. CRITICAL: new-mail detection is the UID-watermark phase below, which
+        // ALWAYS runs and never depends on the CONDSTORE modseq. The modseq only gates the more
+        // expensive flag-change scan. This is deliberate — a modseq that is stale or has wrongly
+        // advanced must NEVER cause missed mail. New mail always carries a UID above everything
+        // we already hold, so the UID watermark catches it regardless of what the modseq says.
         const plan = planModseqSync({ storedModseq, serverModseq, uidValidityChanged });
 
-        if (plan === 'delta') {
-          // Delta fetch — the server told us (via HIGHESTMODSEQ) that something changed. One
-          // CHANGEDSINCE pass over the whole mailbox returns ONLY messages with modseq greater
-          // than our watermark (server-side filtered, so it's cheap even on a 50k mailbox):
-          // every new arrival AND every flag change since the last sync, in one shot. This is
-          // strictly more complete than the UID-watermark + last-N-sequence phases below — no
-          // out-of-order-UID gap and no "flag change older than N" gap. Deletes are not
-          // reported by CONDSTORE and are still reconciled separately by reconcileDeletes().
+        // ── New-mail phase — ALWAYS runs (modseq-independent safety net). Fetches only UIDs
+        // above the highest we already have — usually just the newest message, then a no-op
+        // upsert. Skipped only on first sync (maxKnownUid=0), where backfill owns population.
+        if (maxKnownUid > 0) {
           try {
-            for await (const msg of client.fetch('1:*', fetchQuery, { uid: true, changedSince: BigInt(storedModseq) })) {
+            for await (const msg of client.fetch(`${maxKnownUid + 1}:*`, fetchQuery, { uid: true })) {
               await processMsg(msg);
             }
           } catch (err) {
             if (!extractImapError(err).toLowerCase().includes('invalid messageset')) throw err;
-            // Range became stale due to concurrent expunge between SELECT and FETCH.
-            // Non-fatal — the watermark is not advanced below, so next sync retries.
-            console.warn(`Delta sync skipped for ${logAccount(account)}/${folder}: stale range after concurrent expunge`);
+            // UID range became stale due to concurrent expunge between SELECT and FETCH.
+            // Non-fatal — next sync will catch up.
+            console.warn(`New-mail sync skipped for ${logAccount(account)}/${folder}: stale UID range after concurrent expunge`);
+          }
+        }
+
+        // ── Flag/metadata-change scan — the expensive part, gated by modseq. Covers changes to
+        // EXISTING messages (read/star on another device), which the UID phase above cannot see.
+        // Bounded by FLAG_SCAN_TIMEOUT_MS: if a throttled connection makes it crawl, we DEFER it
+        // (flagScanComplete=false) and skip advancing the watermark, so it retries next tick with
+        // nothing lost — rather than burning the whole-sync budget and forcing a reconnect.
+        let flagScanComplete = true;
+        if (plan === 'delta') {
+          // CHANGEDSINCE returns every message whose modseq advanced past our watermark: flag
+          // changes on older mail, plus any new mail (idempotent — already inserted above).
+          // This is purely the flag-scan optimization; new-mail safety is the UID phase, not this.
+          const insertedBefore = insertedCount;
+          let deltaSeen = 0;
+          try {
+            const scan = (async () => {
+              for await (const msg of client.fetch('1:*', fetchQuery, { uid: true, changedSince: BigInt(storedModseq) })) {
+                await processMsg(msg);
+                deltaSeen++;
+              }
+            })();
+            // If the timeout wins the race, the fetch keeps running until ImapFlow's commandTimeout
+            // aborts it — swallow that late rejection so it isn't an unhandled rejection.
+            scan.catch(() => {});
+            const outcome = await Promise.race([
+              scan,
+              new Promise(res => setTimeout(() => res(FLAG_SCAN_TIMED_OUT), FLAG_SCAN_TIMEOUT_MS)),
+            ]);
+            if (outcome === FLAG_SCAN_TIMED_OUT) {
+              flagScanComplete = false;
+              console.warn(`Delta flag scan deferred for ${logAccount(account)}/${folder}: over ${FLAG_SCAN_TIMEOUT_MS}ms (provider throttling) — retrying next tick`);
+            }
+          } catch (err) {
+            if (!extractImapError(err).toLowerCase().includes('invalid messageset')) throw err;
+            // Range became stale mid-scan — defer the watermark so the next sync retries.
+            flagScanComplete = false;
+            console.warn(`Delta flag scan skipped for ${logAccount(account)}/${folder}: stale range after concurrent expunge`);
+          }
+          // Existing messages returned by CHANGEDSINCE (not newly inserted) are flag/state
+          // changes with no new_messages event of their own — nudge the UI so a read-elsewhere
+          // reflects live instead of staying stale until a manual reload.
+          const existingChanged = deltaSeen - (insertedCount - insertedBefore);
+          if (existingChanged > 0) {
+            this.broadcast({ type: 'flags_synced', accountId: account.id }, account.user_id);
           }
         } else if (plan === 'full') {
-          // Full sync fallback — no usable modseq baseline (first sync, UIDVALIDITY reset, or a
-          // server without CONDSTORE). Uses the two legacy phases; the watermark is seeded from
-          // serverModseq below so subsequent syncs can go delta.
-
-          // Phase 1 — UID-watermark fetch: guaranteed to find ALL messages that arrived
-          // since the last sync, regardless of how many there are.  The sequence-range
-          // approach below is limited to `limit` messages and would silently miss older
-          // arrivals in the batch when more than `limit` messages arrive between ticks.
-          // Skipped on first sync (maxKnownUid=0) because backfill owns initial population.
-          if (maxKnownUid > 0) {
-            try {
-              for await (const msg of client.fetch(`${maxKnownUid + 1}:*`, fetchQuery, { uid: true })) {
-                await processMsg(msg);
-              }
-            } catch (err) {
-              if (!extractImapError(err).toLowerCase().includes('invalid messageset')) throw err;
-              // UID range became stale due to concurrent expunge between SELECT and FETCH.
-              // Non-fatal — next sync will catch up.
-              console.warn(`Message sync phase 1 skipped for ${logAccount(account)}/${folder}: stale UID range after concurrent expunge`);
-            }
-          }
-
-          // Phase 2 — Sequence-range fetch: syncs flag changes (is_read, is_starred) for
-          // recent messages, and handles the first-sync case (maxKnownUid=0).
-          // Messages already inserted by Phase 1 are processed again here but the
-          // ON CONFLICT DO UPDATE is idempotent and xmax=0 prevents double-notification.
-          //
-          // Re-read exists from the live connection rather than reusing the value captured
-          // at SELECT time. ImapFlow may have decremented it asynchronously if an EXPUNGE
-          // notification arrived during Phase 1, making the original fetchRange stale.
+          // No usable modseq baseline (first sync, UIDVALIDITY reset, or a server without
+          // CONDSTORE): scan recent messages by sequence for flag changes. Re-read exists from
+          // the live connection — ImapFlow may have decremented it if an EXPUNGE arrived during
+          // the UID phase, making a range captured at SELECT time stale. The watermark is seeded
+          // below so subsequent syncs can go delta.
           const liveExists = client.mailbox?.exists ?? 0;
           const phase2Range = liveExists > limit
             ? `${liveExists - limit + 1}:${liveExists}` : '1:*';
           try {
-            for await (const msg of client.fetch(phase2Range, fetchQuery)) {
-              await processMsg(msg);
+            const scan = (async () => {
+              for await (const msg of client.fetch(phase2Range, fetchQuery)) {
+                await processMsg(msg);
+              }
+            })();
+            scan.catch(() => {}); // see the delta branch — swallow a post-timeout late rejection
+            const outcome = await Promise.race([
+              scan,
+              new Promise(res => setTimeout(() => res(FLAG_SCAN_TIMED_OUT), FLAG_SCAN_TIMEOUT_MS)),
+            ]);
+            if (outcome === FLAG_SCAN_TIMED_OUT) {
+              flagScanComplete = false;
+              console.warn(`Sequence flag scan deferred for ${logAccount(account)}/${folder}: over ${FLAG_SCAN_TIMEOUT_MS}ms (provider throttling) — retrying next tick`);
             }
           } catch (err) {
             if (!extractImapError(err).toLowerCase().includes('invalid messageset')) throw err;
-            // Sequence range became stale due to concurrent expunge between SELECT and FETCH.
-            // Non-fatal — next sync will catch up.
-            console.warn(`Message sync phase 2 skipped for ${logAccount(account)}/${folder}: stale sequence range after concurrent expunge`);
+            // Sequence range became stale mid-scan — defer the watermark; next sync retries.
+            flagScanComplete = false;
+            console.warn(`Message sync sequence scan skipped for ${logAccount(account)}/${folder}: stale sequence range after concurrent expunge`);
           }
         }
-        // plan === 'unchanged': modseq matched the watermark — nothing changed, no fetch.
+        // plan === 'unchanged': modseq confirms no flag/new changes so the flag scan is skipped;
+        // the UID new-mail phase above still ran as the safety net.
 
-        // Advance the CONDSTORE watermark ONLY after the fetch above completed without throwing,
-        // and store the value read at SELECT time (M). Any mail arriving mid-fetch has modseq
-        // greater than M, so it is simply re-caught next tick — over-fetching is harmless, but
-        // advancing past unprocessed changes would drop them permanently. Skipped when nothing
+        // Advance the CONDSTORE watermark ONLY after a COMPLETE flag scan (not deferred by the
+        // timeout, not aborted mid-range), storing the value read at SELECT time (M). Mail arriving
+        // mid-scan has modseq > M and is re-caught next tick — over-fetching is harmless, but
+        // advancing past an incomplete scan would drop those flag changes. Skipped when nothing
         // changed (already equal) and on a UIDVALIDITY reset (reseed from the new epoch instead).
-        if (serverModseq != null && !uidValidityChanged && plan !== 'unchanged') {
+        if (serverModseq != null && !uidValidityChanged && plan !== 'unchanged' && flagScanComplete) {
           await query(
             'UPDATE folders SET highest_modseq = $1 WHERE account_id = $2 AND path = $3',
             [serverModseq.toString(), account.id, folder]
@@ -2793,6 +2803,7 @@ export class ImapManager {
     // without indexing anything (the case that should trip the circuit breaker).
     let batchCount = 0;
     let failed = false;
+    let refused = false; // provider refused a connection (at its per-account limit) — back off hard
     try {
       // Check if there's anything to index before opening a connection
       const countResult = await query(
@@ -2889,6 +2900,17 @@ export class ImapManager {
           } catch (err) {
             consecutiveErrors++;
             console.error(`Snippet indexer batch error ${logAccount(account)}/${folder}:`, err.message);
+            // Connection refusal = the provider is at its per-account connection limit (iCloud
+            // especially, right after a startup backfill burst). Reopening a fresh connection to
+            // retry would only pile on more pressure and can starve the live sync/IDLE connection
+            // — the exact failure that lets new mail slip through. Stop this run and back off hard
+            // instead; the 10-minute scheduler resumes the backlog once the provider is calm.
+            if (isConnectionRefusal(err.message)) {
+              failed = true;
+              refused = true;
+              console.log(`Snippet indexer backing off ${logAccount(account)} — provider refusing connections (at limit)`);
+              return;
+            }
             await new Promise(r => setTimeout(r, cfg.errorDelay));
             if (consecutiveErrors >= 3) {
               failed = true;
@@ -2917,7 +2939,11 @@ export class ImapManager {
       // refusing the extra connection at its per-account limit) backs off exponentially
       // so the scheduler stops reopening competing IMAP connections that slow live body
       // fetches. Any progress — or a clean/no-work finish — clears the backoff.
-      if (failed && batchCount === 0) {
+      // Back off when the run made no progress, OR when the provider refused a connection at
+      // its limit even if some batches got through — in the refusal case, continuing to reopen
+      // connections on the 10-minute cadence keeps competing with the live sync during exactly
+      // the window when new mail must not be missed.
+      if (refused || (failed && batchCount === 0)) {
         const failures = (this.snippetBackoff.get(account.id)?.failures || 0) + 1;
         const delay = Math.min(SNIPPET_BACKOFF_BASE_MS * 2 ** (failures - 1), SNIPPET_BACKOFF_MAX_MS);
         this.snippetBackoff.set(account.id, { failures, until: Date.now() + delay });
