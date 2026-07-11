@@ -128,6 +128,17 @@ const BODY_PREFETCH_PARTS = ['1', '1.1', '1.2', '2', '2.1', '2.2', '1.1.1', '1.2
 const FLAG_SCAN_TIMEOUT_MS = 20000;
 const FLAG_SCAN_TIMED_OUT = Symbol('flagScanTimedOut');
 
+// Upper bound on how far back the delta flag scan looks. A CHANGEDSINCE fetch over the whole
+// mailbox ('1:*') makes the SERVER evaluate every message's modseq; on a large mailbox (e.g. a
+// 28k-message iCloud INBOX) that scan alone exceeds FLAG_SCAN_TIMEOUT_MS, so it defers every
+// tick, never completes, and the watermark never advances. Restricting the scan to the most
+// recent N UIDs keeps it fast — recent messages are the ones whose flags actually change, and
+// the reactive IDLE flag path (_syncFlagsForRange) already covers live read/star events. A flag
+// change on a message older than this window won't be caught by the periodic scan, but that gap
+// already exists (the IDLE path only looks at the last 200, and the unbounded scan currently
+// never finishes) — so this only makes the common case actually work.
+const DELTA_SCAN_UID_WINDOW = 5000;
+
 // How long (ms) user must be idle before background IMAP jobs (snippet indexer, folder
 // body prefetch) resume after a live body fetch. Keeps click-time fetches snappy by
 // deprioritising background traffic whenever the user is actively reading mail.
@@ -2025,14 +2036,17 @@ export class ImapManager {
         // nothing lost — rather than burning the whole-sync budget and forcing a reconnect.
         let flagScanComplete = true;
         if (plan === 'delta') {
-          // CHANGEDSINCE returns every message whose modseq advanced past our watermark: flag
-          // changes on older mail, plus any new mail (idempotent — already inserted above).
-          // This is purely the flag-scan optimization; new-mail safety is the UID phase, not this.
+          // CHANGEDSINCE returns messages whose modseq advanced past our watermark — flag changes
+          // on existing mail (plus any new mail, idempotent since the UID phase already inserted
+          // it). Scoped to a recent UID window (DELTA_SCAN_UID_WINDOW) so the SERVER-side scan
+          // stays fast on large mailboxes instead of evaluating every message and deferring every
+          // tick; new-mail safety is the UID phase, not this. A tiny mailbox clamps to 1:* anyway.
           const insertedBefore = insertedCount;
           let deltaSeen = 0;
+          const deltaRange = `${Math.max(1, maxKnownUid - DELTA_SCAN_UID_WINDOW + 1)}:*`;
           try {
             const scan = (async () => {
-              for await (const msg of client.fetch('1:*', fetchQuery, { uid: true, changedSince: BigInt(storedModseq) })) {
+              for await (const msg of client.fetch(deltaRange, fetchQuery, { uid: true, changedSince: BigInt(storedModseq) })) {
                 await processMsg(msg);
                 deltaSeen++;
               }
