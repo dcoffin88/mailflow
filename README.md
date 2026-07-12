@@ -542,11 +542,15 @@ MailFlow is free and open source. If it's useful to you, consider supporting dev
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=maathimself/mailflow&type=Date)](https://star-history.com/#maathimself/mailflow&Date)
+[![Stargazers over time](https://starchart.cc/maathimself/mailflow.svg)](https://starchart.cc/maathimself/mailflow)
 
 ---
 
 ## Upgrading
+
+### v2.2.0 – v2.4.1
+
+No manual migration steps required. All schema changes apply automatically on first startup.
 
 ### v2.1.0
 
