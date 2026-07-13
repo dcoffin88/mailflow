@@ -617,6 +617,9 @@ router.patch('/messages/:id/read', async (req, res) => {
   // Keep the cached folder unread_count in sync so pagination totals stay accurate.
   if (!!message.is_read !== !!read) {
     adjustFolderCounts(message.account_id, message.folder, 0, read ? -1 : 1);
+    // Notify the user's OTHER sessions so a read/unread on one device reflects on the rest
+    // in place, without a full folder refetch (the originating device already applied it).
+    imapManager.broadcast({ type: 'message_flags', accountId: message.account_id, changes: [{ id, is_read: read }] }, req.session.userId);
   }
 
   // GTD: a labeled message owns a sibling row per folder. Fan the read change out to
@@ -692,6 +695,10 @@ router.patch('/messages/:id/star', async (req, res) => {
 
   // Refresh GTD section data if this message's thread carries a GTD label (its head shows star state).
   emitGtdSectionsRefresh([message], req.session.userId);
+  // Reflect the star change on the user's other sessions in place (no full refetch).
+  if (!!message.is_starred !== !!starred) {
+    imapManager.broadcast({ type: 'message_flags', accountId: message.account_id, changes: [{ id, is_starred: starred }] }, req.session.userId);
+  }
 
   res.json({ ok: true, is_starred: starred });
 });
@@ -918,6 +925,8 @@ router.post('/messages/bulk-read', async (req, res) => {
     // self-heals any divergence on the next read.
     const gtdUpdatedIds = toUpdate.filter(m => m.gtd_enabled).map(m => m.id);
     if (gtdUpdatedIds.length) await fanOutBulkReadToSiblings(gtdUpdatedIds, read);
+    // Reflect the bulk read/unread change on the user's other sessions in place (no full refetch).
+    imapManager.broadcast({ type: 'message_flags', changes: toUpdate.map(m => ({ id: m.id, is_read: read })) }, req.session.userId);
 
     // IMAP flag updates — group by account to fetch each account row once.
     const byAccount = {};

@@ -70,6 +70,7 @@ export default function MailApp() {
     accounts, rightSidebarWidth, setRightSidebarWidth, isRightSidebarResizing, setIsRightSidebarResizing,
     fetchGtdSections, rightSidebarHidden, toggleRightSidebarHidden,
   } = useStore();
+  const syncInterval = useStore(s => s.syncInterval);
 
   // Single owner of the GTD sections fetch: reload whenever the context (unified
   // vs a single account) changes and GTD is active there. Both the rail and the
@@ -277,7 +278,7 @@ export default function MailApp() {
     return () => window.removeEventListener('popstate', handler);
   }, [isMobile, setSelectedMessage]);
 
-  useWebSocket();
+  const wsRef = useWebSocket();
 
   // Open a specific message by id (fetch → cache → select). Shared by the on-load
   // deep-link path and the service-worker notification-tap path so both behave
@@ -425,6 +426,20 @@ export default function MailApp() {
     const interval = setInterval(refreshCounts, 300000);
     return () => clearInterval(interval);
   }, [setAccounts, setUnreadCounts, setTodoistConnected]);
+
+  // WebSocket-independent periodic refresh of the open message list, at the user's chosen sync
+  // interval. Only fires when the tab is visible AND the socket is not OPEN — a true fallback so
+  // read state and new mail still converge if the WebSocket is down, without redundant refetching
+  // while it's healthy (the socket delivers updates instantly in that case).
+  useEffect(() => {
+    const ms = Math.max(15, syncInterval || 60) * 1000;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible' && wsRef.current?.readyState !== WebSocket.OPEN) {
+        window.dispatchEvent(new CustomEvent('mailflow:refresh'));
+      }
+    }, ms);
+    return () => clearInterval(id);
+  }, [syncInterval, wsRef]);
 
   // Update browser tab title, favicon badge, and PWA home screen badge with unread count
   useEffect(() => {
