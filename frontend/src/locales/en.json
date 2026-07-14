@@ -396,7 +396,8 @@
     "renameFailed": "Rename failed",
     "deleteFailed": "Delete failed",
     "emptyFailed": "Empty failed",
-    "backToAccounts": "Back to accounts"
+    "backToAccounts": "Back to accounts",
+    "updateAvailable": "Update available: v{{version}}"
   },
   "contextMenu": {
     "open": "Open",

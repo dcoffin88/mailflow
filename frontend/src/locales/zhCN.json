@@ -396,7 +396,8 @@
     "renameFailed": "重命名失败",
     "deleteFailed": "删除失败",
     "emptyFailed": "清空失败",
-    "backToAccounts": "返回账户列表"
+    "backToAccounts": "返回账户列表",
+    "updateAvailable": "有可用更新：v{{version}}"
   },
   "contextMenu": {
     "open": "打开",

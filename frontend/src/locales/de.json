@@ -396,7 +396,8 @@
     "renameFailed": "Umbenennen fehlgeschlagen",
     "deleteFailed": "Löschen fehlgeschlagen",
     "emptyFailed": "Leeren fehlgeschlagen",
-    "backToAccounts": "Zurück zu Konten"
+    "backToAccounts": "Zurück zu Konten",
+    "updateAvailable": "Update verfügbar: v{{version}}"
   },
   "contextMenu": {
     "open": "Öffnen",

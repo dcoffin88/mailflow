@@ -396,7 +396,8 @@
     "renameFailed": "Error al renombrar",
     "deleteFailed": "Error al eliminar",
     "emptyFailed": "Error al vaciar",
-    "backToAccounts": "Volver a cuentas"
+    "backToAccounts": "Volver a cuentas",
+    "updateAvailable": "Actualización disponible: v{{version}}"
   },
   "contextMenu": {
     "open": "Abrir",

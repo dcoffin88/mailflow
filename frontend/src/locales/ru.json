@@ -396,7 +396,8 @@
     "renameFailed": "Не удалось переименовать",
     "deleteFailed": "Не удалось удалить",
     "emptyFailed": "Не удалось очистить",
-    "backToAccounts": "Назад к аккаунтам"
+    "backToAccounts": "Назад к аккаунтам",
+    "updateAvailable": "Доступно обновление: v{{version}}"
   },
   "contextMenu": {
     "open": "Открыть",

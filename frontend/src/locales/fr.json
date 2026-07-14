@@ -396,7 +396,8 @@
     "renameFailed": "Échec du renommage",
     "deleteFailed": "Échec de la suppression",
     "emptyFailed": "Échec du vidage",
-    "backToAccounts": "Retour aux comptes"
+    "backToAccounts": "Retour aux comptes",
+    "updateAvailable": "Mise à jour disponible : v{{version}}"
   },
   "contextMenu": {
     "open": "Ouvrir",
