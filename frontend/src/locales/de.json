@@ -1234,7 +1234,9 @@
       "license": "Lizenz",
       "website": "Website",
       "sourceCode": "Quellcode",
-      "sponsor": "Entwicklung unterstützen"
+      "sponsor": "Entwicklung unterstützen",
+      "kofi": "Ko-fi",
+      "githubSponsors": "GitHub Sponsors"
     },
     "rules": {
       "conditionLogicOr": "eine Bedingung (ODER)",

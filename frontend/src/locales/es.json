@@ -1301,7 +1301,9 @@
       "license": "Licencia",
       "website": "Sitio web",
       "sourceCode": "Código fuente",
-      "sponsor": "Apoyar el desarrollo"
+      "sponsor": "Apoyar el desarrollo",
+      "kofi": "Ko-fi",
+      "githubSponsors": "GitHub Sponsors"
     },
     "search": {
       "placeholder": "Buscar ajustes…",
