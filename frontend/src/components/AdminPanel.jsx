@@ -5370,6 +5370,12 @@ function RulesTab() {
   const [runResult, setRunResult] = useState(null);
   const [runError, setRunError] = useState('');
 
+  // Drag-and-drop state for rules reorder
+  const [ruleDragIdx, setRuleDragIdx] = useState(null);
+  const [ruleDropIdx, setRuleDropIdx] = useState(null);
+
+  const isMobile = useMobile();
+
   async function handleRunRules() {
     setRunningRules(true);
     setRunResult(null);
@@ -5525,6 +5531,17 @@ function RulesTab() {
     } finally {
       setFormSaving(false);
     }
+  }
+
+  async function handleReorderRules(from, to) {
+    const copy = [...rules];
+    const reordered = [...rules];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(to, 0, moved);
+
+    setRules(reordered);
+
+    api.reorderRules(reordered.map(r => r.id)).catch(() => { setRules(copy); })
   }
 
   function setCondition(idx, key, val) {
@@ -5884,53 +5901,99 @@ function RulesTab() {
         <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{t('admin.rules.empty')}</div>
       )}
 
-      {rules.map(rule => (
-        <div key={rule.id} style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 14px', marginBottom: 8 }}>
-          {confirmDelete === rule.id ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: 'var(--text-primary)', flex: 1 }}>{t('admin.rules.deleteConfirm')}</span>
-              <button
-                onClick={() => handleDelete(rule.id)}
-                style={{ padding: '5px 12px', background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
-              >
-                {t('admin.rules.deleteButton')}
-              </button>
-              <button
-                onClick={() => setConfirmDelete(null)}
-                style={{ padding: '5px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: 'var(--text-primary)' }}
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 0, cursor: 'pointer', marginTop: 2, flexShrink: 0 }}>
-                <input type="checkbox" checked={rule.enabled} onChange={() => handleToggle(rule)} />
-              </label>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{rule.name || '(unnamed)'}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {conditionSummary(rule)} → {actionSummary(rule)}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+      {rules.map((rule, idx) => {
+        const isDragging = ruleDragIdx === idx;
+        const isDropTarget = ruleDropIdx === idx && ruleDragIdx !== null && ruleDragIdx !== idx;
+        const canDrag = rules.length > 1;
+
+        return (
+          <div
+            key={rule.id}
+            className="no-callout"
+            onDragOver={e => {
+              e.preventDefault();
+              setRuleDropIdx(idx);
+            }}
+            onDrop={e => {
+              e.preventDefault();
+              if (canDrag && ruleDragIdx !== null && ruleDragIdx !== idx) {
+                handleReorderRules(ruleDragIdx, idx)
+              }
+
+              setRuleDragIdx(null);
+              setRuleDropIdx(null);
+            }}
+            onDragEnd={canDrag ? () => { setRuleDragIdx(null); setRuleDropIdx(null); } : undefined}
+            style={{
+              padding: '12px 14px',
+              marginBottom: 8,
+              borderRadius: 8,
+              touchAction: 'pan-y',
+              background: 'var(--bg-tertiary)',
+              opacity: isDragging ? 0.4 : 1,
+              border: '1px solid var(--border)',
+              borderTop: isDropTarget ? '1px solid var(--accent)' : '1px solid var(--border)'
+            }}
+          >
+            {confirmDelete === rule.id ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, color: 'var(--text-primary)', flex: 1 }}>{t('admin.rules.deleteConfirm')}</span>
                 <button
-                  onClick={() => openEdit(rule)}
-                  style={{ padding: '4px 10px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: 'var(--text-primary)' }}
-                >
-                  {t('admin.rules.editButton')}
-                </button>
-                <button
-                  onClick={() => setConfirmDelete(rule.id)}
-                  style={{ padding: '4px 10px', background: 'none', border: '1px solid var(--red)', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: 'var(--red)' }}
+                  onClick={() => handleDelete(rule.id)}
+                  style={{ padding: '5px 12px', background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
                 >
                   {t('admin.rules.deleteButton')}
                 </button>
+                <button
+                  onClick={() => setConfirmDelete(null)}
+                  style={{ padding: '5px 12px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: 'var(--text-primary)' }}
+                >
+                  {t('common.cancel')}
+                </button>
               </div>
-            </div>
-          )}
-        </div>
-      ))}
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                {canDrag && (
+                  <span
+                    draggable={!isMobile}
+                    onDragStart={!isMobile ? () => { setRuleDragIdx(idx); setRuleDropIdx(null); } : undefined}
+                    style={{ color: 'var(--text-primary)', flexShrink: 0, display: 'flex', opacity: 0.4, cursor: isMobile ? 'default' : 'grab' }}
+                  >
+                    <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+                      <circle cx="2" cy="2" r="1.5"/><circle cx="8" cy="2" r="1.5"/>
+                      <circle cx="2" cy="7" r="1.5"/><circle cx="8" cy="7" r="1.5"/>
+                      <circle cx="2" cy="12" r="1.5"/><circle cx="8" cy="12" r="1.5"/>
+                    </svg>
+                  </span>
+                )}
+                <label style={{ display: 'flex', alignItems: 'center', gap: 0, cursor: 'pointer', marginTop: 2, flexShrink: 0 }}>
+                  <input type="checkbox" checked={rule.enabled} onChange={() => handleToggle(rule)} />
+                </label>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 2 }}>{rule.name || '(unnamed)'}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {conditionSummary(rule)} → {actionSummary(rule)}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <button
+                    onClick={() => openEdit(rule)}
+                    style={{ padding: '4px 10px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: 'var(--text-primary)' }}
+                  >
+                    {t('admin.rules.editButton')}
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(rule.id)}
+                    style={{ padding: '4px 10px', background: 'none', border: '1px solid var(--red)', borderRadius: 6, fontSize: 12, cursor: 'pointer', color: 'var(--red)' }}
+                  >
+                    {t('admin.rules.deleteButton')}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   );
 }
