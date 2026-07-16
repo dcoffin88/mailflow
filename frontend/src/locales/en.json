@@ -209,6 +209,8 @@
     "aiRegenerate": "Regenerate",
     "aiExpand": "Expand",
     "aiCollapse": "Collapse",
+    "aiCopy": "Copy",
+    "aiCopied": "Copied",
     "previousMessage": "Previous message",
     "nextMessage": "Next message",
     "archived": {

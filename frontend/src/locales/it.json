@@ -209,6 +209,8 @@
     "aiRegenerate": "Rigenera",
     "aiExpand": "Espandi",
     "aiCollapse": "Comprimi",
+    "aiCopy": "Copia",
+    "aiCopied": "Copiato",
     "previousMessage": "Messaggio precedente",
     "nextMessage": "Messaggio successivo",
     "archived": {

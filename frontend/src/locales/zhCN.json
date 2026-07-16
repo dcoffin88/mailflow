@@ -209,6 +209,8 @@
     "aiRegenerate": "重新生成",
     "aiExpand": "展开",
     "aiCollapse": "收起",
+    "aiCopy": "复制",
+    "aiCopied": "已复制",
     "previousMessage": "上一封邮件",
     "nextMessage": "下一封邮件",
     "archived": {

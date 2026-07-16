@@ -209,6 +209,8 @@
     "aiRegenerate": "Сгенерировать заново",
     "aiExpand": "Развернуть",
     "aiCollapse": "Свернуть",
+    "aiCopy": "Копировать",
+    "aiCopied": "Скопировано",
     "previousMessage": "Предыдущее сообщение",
     "nextMessage": "Следующее сообщение",
     "archived": {
