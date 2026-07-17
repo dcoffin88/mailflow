@@ -389,6 +389,15 @@ export const useStore = create((set, get) => ({
     schedulePrefSave({ hoverQuickActions: val });
   },
 
+  // Show sender avatars in the mobile message list (off by default — they cost row width
+  // on a narrow screen; opt-in for users who prefer the scannability). Desktop always shows them.
+  showMobileAvatars: localStorage.getItem('mailflow_show_mobile_avatars') === 'true',
+  setShowMobileAvatars: (val) => {
+    localStorage.setItem('mailflow_show_mobile_avatars', String(val));
+    set({ showMobileAvatars: val });
+    schedulePrefSave({ showMobileAvatars: val });
+  },
+
   replyDefault: localStorage.getItem('mailflow_reply_default') || 'reply',
   setReplyDefault: (val) => {
     localStorage.setItem('mailflow_reply_default', val);
@@ -836,6 +845,10 @@ export const useStore = create((set, get) => ({
       if (typeof prefs.hoverQuickActions === 'boolean') {
         localStorage.setItem('mailflow_hover_quick_actions', String(prefs.hoverQuickActions));
         set({ hoverQuickActions: prefs.hoverQuickActions });
+      }
+      if (typeof prefs.showMobileAvatars === 'boolean') {
+        localStorage.setItem('mailflow_show_mobile_avatars', String(prefs.showMobileAvatars));
+        set({ showMobileAvatars: prefs.showMobileAvatars });
       }
       if (prefs.replyDefault === 'reply' || prefs.replyDefault === 'replyAll') {
         localStorage.setItem('mailflow_reply_default', prefs.replyDefault);

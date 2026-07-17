@@ -853,7 +853,12 @@
       "hoverQuickActionsOff": "Off",
       "hoverQuickActionsOffDesc": "Keep Quick Actions hidden until you use the context menu or shortcuts.",
       "hoverQuickActionsOn": "On",
-      "hoverQuickActionsOnDesc": "Show Quick Action icons in message rows when the pointer is over them."
+      "hoverQuickActionsOnDesc": "Show Quick Action icons in message rows when the pointer is over them.",
+      "mobileAvatarsMode": "Sender avatars (mobile)",
+      "mobileAvatarsOff": "Off",
+      "mobileAvatarsOffDesc": "No avatar — maximum room for sender and subject.",
+      "mobileAvatarsOn": "On",
+      "mobileAvatarsOnDesc": "Show a sender avatar in each row (uses a little width)."
     },
     "notifications": {
       "title": "Notifications",
