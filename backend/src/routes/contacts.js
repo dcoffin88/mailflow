@@ -190,7 +190,7 @@ router.get('/gravatar', async (req, res) => {
     res.set('Cache-Control', 'private, max-age=86400');
     res.set('Content-Type', type);
     return res.send(buf);
-  } catch (err) {
+  } catch {
     return res.status(502).end();
   }
 });
