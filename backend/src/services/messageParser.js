@@ -159,7 +159,13 @@ export function buildSnippetFromHtml(html) {
     // Strip ##marker## template placeholders emitted by some marketing tools
     // (UPS, Epsilon) that don't fully render before sending.
     .replace(/##[^#]*##/g, '')
-    .replace(/<(?:[^>"']|"[^"]*"|'[^']*')+>/g, ' ')
+    // Tag body excludes '<' so it can never span across a following tag opener.
+    // Quoted attribute values may still hold '>' ("src=...a=1>2"). Excluding '<'
+    // keeps this linear: on a body with many bare '<' and no '>', each opener
+    // fails in O(1) instead of re-scanning to end-of-body from every position
+    // (the old [^>"'] let the body swallow later '<', which was O(n²) — a crafted
+    // body of many '<' with no '>' would freeze the sync loop).
+    .replace(/<(?:[^<>"']|"[^"]*"|'[^']*')+>/g, ' ')
     // A tag with no closing angle bracket bypasses the tag matcher and would
     // otherwise become literal preview text through the end of the body.
     .replace(/<\/?[a-z][a-z0-9:-]*(?:\s+[\s\S]*)?$/gi, ' ')

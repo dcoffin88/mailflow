@@ -46,6 +46,20 @@ describe('buildSnippetFromHtml', () => {
     const html = '<p>========================================</p><p>Visible content</p>';
     expect(buildSnippetFromHtml(html)).toBe('Visible content');
   });
+
+  it('stays linear on a body of many bare "<" with no ">"', () => {
+    // The tag body excludes '<' so an opener can't span across the next one.
+    // With the old [^>"'] this was O(n²) — ~15s at 200KB, freezing the sync
+    // loop; a return to quadratic scanning is minutes, orders over this bound.
+    const html = '<a'.repeat(150000); // ~300KB of bare openers, no '>'
+    let fastest = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const start = performance.now();
+      buildSnippetFromHtml(html);
+      fastest = Math.min(fastest, performance.now() - start);
+    }
+    expect(fastest).toBeLessThan(200);
+  });
 });
 
 describe('snippetFromBody', () => {
