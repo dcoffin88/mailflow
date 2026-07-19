@@ -1,9 +1,9 @@
 name: Publish Apps
 
+# Manual-only until the native apps are release-ready: signing secrets must be
+# configured and the deferred native security items resolved before this ships.
+# Re-add the `push.tags` trigger to publish native builds automatically on a tag.
 on:
-  push:
-    tags:
-      - 'v*.*.*'
   workflow_dispatch:
 
 permissions:
