@@ -21,6 +21,7 @@ const ContactsPage = lazy(() => import('./ContactsPage.jsx'));
 
 const ComposeModal = lazy(() => import('./ComposeModal.jsx'));
 const AdminPanel   = lazy(() => import('./AdminPanel.jsx'));
+const ElectronNotificationBridge = lazy(() => import('./ElectronNotificationBridge.jsx'));
 
 // Read + atomically clear the deep-link the service worker persisted on a
 // notification tap (shared IndexedDB store 'mailflow-nav'). Fully guarded so any
@@ -110,6 +111,7 @@ export default function MailApp() {
   }, [gtdActive, selectedAccountId, gtdEnabledKey, fetchGtdSections]);
 
   const scale = fontSize / 100;
+  const hasNativeBridge = Boolean(window.mailflowNative || window.Capacitor?.isNativePlatform?.());
   const [vpSize, setVpSize] = useState({ w: window.innerWidth, h: window.innerHeight });
   useEffect(() => {
     const update = () => setVpSize({ w: window.innerWidth, h: window.innerHeight });
@@ -483,6 +485,7 @@ export default function MailApp() {
       if (showAppBadge && total > 0) navigator.setAppBadge(total).catch(() => {});
       else navigator.clearAppBadge().catch(() => {});
     }
+    window.mailflowNative?.badges?.setUnreadCount?.(total).catch(() => {});
   }, [unreadCounts, selectedAccountId, showAppBadge, showFaviconBadge]);
 
   // ── Global keyboard shortcut listener ──────────────────────────────────────
@@ -493,6 +496,53 @@ export default function MailApp() {
   const showAdminRef  = useRef(showAdmin);
   useEffect(() => { composingRef.current  = composing;  }, [composing]);
   useEffect(() => { showAdminRef.current  = showAdmin;  }, [showAdmin]);
+
+  const mobileSidebarOpenRef = useRef(mobileSidebarOpen);
+  const showShortcutHelpRef = useRef(showShortcutHelp);
+  const paletteOpenRef = useRef(paletteOpen);
+  useEffect(() => { mobileSidebarOpenRef.current = mobileSidebarOpen; }, [mobileSidebarOpen]);
+  useEffect(() => { showShortcutHelpRef.current = showShortcutHelp; }, [showShortcutHelp]);
+  useEffect(() => { paletteOpenRef.current = paletteOpen; }, [paletteOpen]);
+
+  useEffect(() => {
+    window.__mailflowHandleAndroidBack = () => {
+      if (composingRef.current) {
+        useStore.getState().closeCompose();
+        return true;
+      }
+
+      if (showAdminRef.current) {
+        setShowAdmin(false);
+        return true;
+      }
+
+      if (paletteOpenRef.current) {
+        setPaletteOpen(false);
+        return true;
+      }
+
+      if (showShortcutHelpRef.current) {
+        setShowShortcutHelp(false);
+        return true;
+      }
+
+      if (mobileSidebarOpenRef.current) {
+        setMobileSidebarOpen(false);
+        return true;
+      }
+
+      if (selectedMessageIdRef.current) {
+        setSelectedMessage(null);
+        return true;
+      }
+
+      return false;
+    };
+
+    return () => {
+      if (window.__mailflowHandleAndroidBack) delete window.__mailflowHandleAndroidBack;
+    };
+  }, [setMobileSidebarOpen, setSelectedMessage, setShowAdmin]);
 
   useEffect(() => {
     if (isMobile) return;
@@ -821,6 +871,7 @@ export default function MailApp() {
 
       <Suspense fallback={lazyFallback}>{composing && <ComposeModal />}</Suspense>
       <Suspense fallback={lazyFallback}>{showAdmin && <AdminPanel />}</Suspense>
+      <Suspense fallback={null}>{hasNativeBridge && <ElectronNotificationBridge />}</Suspense>
       <NotificationToasts />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
 
