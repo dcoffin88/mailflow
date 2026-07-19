@@ -12,7 +12,7 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           token: ${{ secrets.SPONSORS_TOKEN }}
 
@@ -92,7 +92,10 @@ jobs:
           }
           EOF
 
+      # The star chart is decorative — never let a transient API blip here fail the
+      # job and block the sponsors commit below. The script also retries internally.
       - name: Generate star history chart
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/generate-star-chart.mjs

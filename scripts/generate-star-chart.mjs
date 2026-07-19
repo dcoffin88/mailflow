@@ -10,10 +10,44 @@ const REPO = process.env.GITHUB_REPOSITORY || 'maathimself/mailflow';
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || process.env.SPONSORS_TOKEN;
 const OUT = process.env.STAR_OUT || '.github/assets/star-history.svg';
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Fetch with retry on TRANSIENT failures only — network errors, 5xx, and
+// rate limiting (429, or 403 with the rate-limit budget exhausted). A single
+// GitHub API blip during the weekly run used to throw and fail the whole chart
+// (and, because that step gated the commit, it also blocked the sponsors update).
+// Honors Retry-After when present, otherwise exponential backoff capped at 16s.
+// Non-transient responses (e.g. 404) pass straight through for the caller to handle.
+async function fetchWithRetry(url, opts, attempts = 4) {
+  let lastErr;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch (err) {
+      lastErr = err; // network-level failure — retry
+      if (attempt < attempts) await sleep(Math.min(2 ** attempt, 16) * 1000);
+      continue;
+    }
+    const rateLimited = res.status === 429
+      || (res.status === 403 && res.headers.get('x-ratelimit-remaining') === '0');
+    if (res.status >= 500 || rateLimited) {
+      lastErr = new Error(`GitHub API ${res.status}`);
+      if (attempt < attempts) {
+        const retryAfter = Number(res.headers.get('retry-after'));
+        await sleep(retryAfter > 0 ? retryAfter * 1000 : Math.min(2 ** attempt, 16) * 1000);
+      }
+      continue;
+    }
+    return res;
+  }
+  throw lastErr;
+}
+
 async function fetchStargazers() {
   const times = [];
   for (let page = 1; page <= 200; page++) {
-    const res = await fetch(`https://api.github.com/repos/${REPO}/stargazers?per_page=100&page=${page}`, {
+    const res = await fetchWithRetry(`https://api.github.com/repos/${REPO}/stargazers?per_page=100&page=${page}`, {
       headers: {
         // star+json media type returns the `starred_at` timestamp per stargazer.
         Accept: 'application/vnd.github.star+json',
