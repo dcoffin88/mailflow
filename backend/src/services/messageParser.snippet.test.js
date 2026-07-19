@@ -2,9 +2,16 @@ import { describe, it, expect } from 'vitest';
 import { buildSnippetFromHtml, parseMessage, snippetFromBody } from './messageParser.js';
 
 describe('buildSnippetFromHtml', () => {
-  it('drops CSS from an unclosed style block inside the document head', () => {
-    const html = '<html><head><style>body{max-width:740px}h1{font-size:30px;color:#000}<title>Newsletter</head><body><p>Hello</p></body></html>';
+  it('drops CSS from a style block in the document head', () => {
+    const html = '<html><head><style>body{max-width:740px}h1{font-size:30px;color:#000}</style><title>Newsletter</title></head><body><p>Hello</p></body></html>';
     expect(buildSnippetFromHtml(html)).toBe('Hello');
+  });
+
+  it('treats an unclosed style block as raw text to end of document (matches browser rendering)', () => {
+    // No </style>, so per the HTML spec everything after <style> is style content — a
+    // browser renders nothing visible past it, and the snippet is correspondingly empty.
+    const html = '<html><head><style>body{max-width:740px}<title>Newsletter</head><body><p>Hello</p></body></html>';
+    expect(buildSnippetFromHtml(html)).toBe('');
   });
 
   it('strips a tag when an attribute contains a greater-than sign', () => {

@@ -1,3 +1,5 @@
+import { Parser } from 'htmlparser2';
+
 // Regex matching invisible / zero-width / filler Unicode chars used by email marketers
 // as "preheader killers" to prevent snippet text from leaking into mail-client previews.
 // U+00AD soft-hyphen, U+034F combining grapheme joiner, U+200B zero-width space,
@@ -144,41 +146,61 @@ export function snippetFromBody(text, html) {
 // Strip HTML markup and decode all entities to produce a plain-text snippet.
 // Exported so imapManager can use the same logic when building snippets from
 // pre-fetched raw HTML bodies (avoiding duplicated, inconsistent entity handling).
+// Extract visible text from an HTML body with a real streaming parser (htmlparser2).
+// It is linear by construction — a state machine with no backtracking — so unlike the
+// former tag/comment/style/entity regex chain it has no ReDoS surface (see #285/#287/#288,
+// where two regex passes each froze the sync loop on crafted bodies). The parser skips
+// non-content elements, decodes entities natively, and inserts a space at every element
+// boundary so words never merge across block tags. Invisible "preheader killer" runs are
+// dropped inline and whitespace-only nodes collapse to one space, so the visible-character
+// cap (not raw length) is never exhausted by filler; the cap plus chunked feeding bound
+// work on multi-MB bodies. Note: an unclosed <style>/<script> is raw-text-to-EOF per the
+// HTML spec (a browser renders nothing after it), so any trailing visible text is dropped —
+// matching how the message actually renders, unlike the old head-first regex strip.
+const SNIPPET_SKIP_TAGS = new Set(['script', 'style', 'head', 'title', 'noscript']);
+const SNIPPET_VISIBLE_CAP = 260; // stop after this many visible chars — comfortably over the 200-char snippet
+
+function extractHtmlSnippetText(html) {
+  let out = '';
+  let skipDepth = 0;
+  let visible = 0;
+  let done = false;
+  const invisible = new RegExp(INVISIBLE_CHARS_RE.source, 'g');
+  const addSeparator = () => { if (out && !/\s$/.test(out)) out += ' '; };
+
+  const parser = new Parser({
+    onopentag(name) { if (SNIPPET_SKIP_TAGS.has(name)) { skipDepth++; return; } if (!skipDepth) addSeparator(); },
+    onclosetag(name) { if (SNIPPET_SKIP_TAGS.has(name)) { if (skipDepth) skipDepth--; return; } if (!skipDepth) addSeparator(); },
+    ontext(text) {
+      if (skipDepth || done) return;
+      const clean = text.replace(invisible, '');
+      if (!clean) return;
+      if (/^\s*$/.test(clean)) { addSeparator(); return; } // collapse whitespace-only runs (incl. de-filler'd text)
+      out += clean;
+      visible += clean.replace(/\s+/g, '').length;
+      if (visible >= SNIPPET_VISIBLE_CAP) done = true;
+    },
+  }, { decodeEntities: true, lowerCaseTags: true });
+
+  try {
+    const CHUNK = 65536;
+    for (let i = 0; i < html.length && !done; i += CHUNK) parser.write(html.slice(i, i + CHUNK));
+    parser.end();
+  } catch { /* be robust: return whatever was extracted before any parser error */ }
+  return out;
+}
+
+// Build a plain-text snippet from an HTML body. Extraction is done by the parser above;
+// only the post-extraction text cleanup stays as regex — ##marker## placeholders, residual
+// invisibles, decorative divider runs, and whitespace collapse — all operating on already
+// extracted visible text (bounded, linear).
 export function buildSnippetFromHtml(html) {
-  return html
-    // Strip the enclosing head first so an unclosed nested style cannot consume
-    // visible body content while falling back to the end of the document.
-    .replace(/<head\b[^>]*>[\s\S]*?(?:<\/head\s*>|$)/gi, '')
-    .replace(/<style\b[^>]*>[\s\S]*?(?:<\/style\s*>|$)/gi, '')
-    .replace(/<script\b[^>]*>[\s\S]*?(?:<\/script\s*>|$)/gi, '')
-    // Strip HTML comments (including MSO conditional comments) before tag
-    // stripping — otherwise dangling --> fragments and comment content leak
-    // into the snippet text (e.g. UPS ##varLangText1## template markers sit
-    // inside comments and survive tag-only regex stripping).
-    .replace(/<!--[\s\S]*?(?:-->|$)/gi, '')
+  return extractHtmlSnippetText(html)
     // Strip ##marker## template placeholders emitted by some marketing tools
     // (UPS, Epsilon) that don't fully render before sending.
     .replace(/##[^#]*##/g, '')
-    // Tag body excludes '<' so it can never span across a following tag opener.
-    // Quoted attribute values may still hold '>' ("src=...a=1>2"). Excluding '<'
-    // keeps this linear: on a body with many bare '<' and no '>', each opener
-    // fails in O(1) instead of re-scanning to end-of-body from every position
-    // (the old [^>"'] let the body swallow later '<', which was O(n²) — a crafted
-    // body of many '<' with no '>' would freeze the sync loop).
-    .replace(/<(?:[^<>"']|"[^"]*"|'[^']*')+>/g, ' ')
-    // A tag with no closing angle bracket bypasses the tag matcher and would
-    // otherwise become literal preview text through the end of the body.
-    .replace(/<\/?[a-z][a-z0-9:-]*(?:\s+[\s\S]*)?$/gi, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&apos;/gi, "'")
-    .replace(/&#x([0-9A-Fa-f]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#([0-9]+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)))
-    .replace(/&([a-z][a-z0-9]*);/gi, decodeNamedEntity)
     .replace(INVISIBLE_CHARS_RE, '')
+    // Drop decorative divider runs ("====", "----") used as visual separators.
     .replace(/(?<=^|\s)([=_*#~-])\1{3,}(?=\s|$)/g, '')
     .replace(/\s+/g, ' ').trim().substring(0, 200);
 }
