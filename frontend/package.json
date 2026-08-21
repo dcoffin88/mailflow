@@ -1,12 +1,17 @@
 {
   "name": "mailflow-frontend",
   "productName": "MailFlow",
-  "version": "3.5.1",
+  "desktopName": "MailFlow",
+  "version": "3.1.4",
   "description": "A self-hosted, unified webmail client.",
   "homepage": "https://mailflow.sh",
   "author": {
     "name": "maathimself",
     "email": "matthias@mailflow.sh"
+  },
+  "nativeAppAuthor": {
+    "name": "dcoffin88",
+    "email": "doug@thecoffins.ca"
   },
   "type": "module",
   "main": "packages/electron/main.cjs",
@@ -72,6 +77,7 @@
       "include": "packages/electron/installer.nsh"
     },
     "mac": {
+      "identity": null,
       "artifactName": "${productName}-${version}-Universal.${ext}",
       "target": [
         {
@@ -84,6 +90,7 @@
     },
     "linux": {
       "artifactName": "${productName}-${version}.${ext}",
+      "syncDesktopName": true,
       "target": [
         {
           "target": "deb",
@@ -111,8 +118,8 @@
     "deb": {
       "packageName": "mailflow",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "maintainer": "maathimself <matthias@mailflow.sh>",
-      "vendor": "maathimself",
+      "maintainer": "dcoffin88 <doug@thecoffins.ca>",
+      "vendor": "MailFlow",
       "packageCategory": "net",
       "synopsis": "A self-hosted, unified webmail client.",
       "fpm": [
