@@ -1,17 +1,330 @@
 name: Publish Apps
 
-# Manual-only until the native apps are release-ready: signing secrets must be
-# configured and the deferred native security items resolved before this ships.
-# Re-add the `push.tags` trigger to publish native builds automatically on a tag.
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream release version/tag to build (for example v3.0.0). Leave blank for latest upstream."
+        required: false
+        type: string
+
+  schedule:
+    # Every day at 22:00 UTC
+    - cron: '00 22 * * *'
 
 permissions:
   contents: write
 
+env:
+  UPSTREAM_ORG: "maathimself"
+  REPO: "mailflow"
+  PATCH_BRANCH: "native-app-fixes"
+
 jobs:
+  # =====================================================================
+  # Select upstream release, apply native fixes, determine release
+  # =====================================================================
+  sync-upstream:
+    name: Prepare exact upstream release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    outputs:
+      sha: ${{ steps.sync.outputs.sha }}
+      release_tag: ${{ steps.sync.outputs.release_tag }}
+      skip_build: ${{ steps.sync.outputs.skip_build }}
+
+    steps:
+      - name: Checkout fork main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Prepare exact upstream release
+        id: sync
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # ---------------------------------------------------------------
+          # Configure upstream.
+          #
+          # Do not fetch upstream tags directly into refs/tags/* because the
+          # fork may already have release tags pointing at patched commits.
+          # ---------------------------------------------------------------
+          git remote add upstream-origin \
+            "https://github.com/${UPSTREAM_ORG}/${REPO}.git" 2>/dev/null \
+            || git remote set-url upstream-origin \
+            "https://github.com/${UPSTREAM_ORG}/${REPO}.git"
+
+          # Preserve the current fork main for workflow restoration and
+          # force-with-lease protection.
+          git fetch origin main
+
+          # Fetch current upstream/main only as a history reference.
+          #
+          # Builds are based on an exact upstream release tag selected below.
+          git fetch upstream-origin \
+            "+refs/heads/main:refs/remotes/upstream-origin/main"
+
+          # ---------------------------------------------------------------
+          # Determine the newest upstream semantic-version tag.
+          # ---------------------------------------------------------------
+          latest_upstream="$(
+            git ls-remote --tags --refs upstream-origin 'v*' \
+              | awk '{sub("refs/tags/", "", $2); print $2}' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V \
+              | tail -n1
+          )"
+
+          if [ -z "$latest_upstream" ]; then
+            echo "::error::No upstream vX.Y.Z tag could be found."
+            exit 1
+          fi
+
+          echo "Latest upstream version: $latest_upstream"
+
+          # ---------------------------------------------------------------
+          # Select the exact upstream release to build.
+          #
+          # Manual:
+          #   supplied version -> build that exact upstream tag
+          #   blank            -> build latest upstream tag
+          #
+          # Schedule:
+          #   build latest upstream tag
+          # ---------------------------------------------------------------
+          if [ -n "${DISPATCH_VERSION:-}" ]; then
+            RELEASE_TAG="$DISPATCH_VERSION"
+          else
+            RELEASE_TAG="$latest_upstream"
+          fi
+
+          echo "Requested release: $RELEASE_TAG"
+
+          # Require normal semantic release tags.
+          if ! [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release version must look like vX.Y.Z."
+            echo "::error::Received: $RELEASE_TAG"
+            exit 1
+          fi
+
+          # ---------------------------------------------------------------
+          # Verify that the selected release actually exists upstream.
+          # ---------------------------------------------------------------
+          if ! git ls-remote \
+            --exit-code \
+            --tags \
+            --refs \
+            upstream-origin \
+            "refs/tags/${RELEASE_TAG}" \
+            >/dev/null 2>&1; then
+
+            echo "::error::Upstream release ${RELEASE_TAG} does not exist."
+            exit 1
+          fi
+
+          # ---------------------------------------------------------------
+          # Scheduled builds should run only once per upstream version.
+          #
+          # Manual runs intentionally bypass this check so an existing
+          # release can be rebuilt or repaired.
+          # ---------------------------------------------------------------
+          SKIP_BUILD=false
+
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if gh release view "$RELEASE_TAG" \
+              --repo "${GITHUB_REPOSITORY}" \
+              >/dev/null 2>&1; then
+
+              echo "Release $RELEASE_TAG already exists."
+              echo "Nothing new to publish."
+              SKIP_BUILD=true
+            else
+              echo "Release $RELEASE_TAG does not exist."
+              echo "Native build will be published."
+            fi
+          fi
+
+          # We can stop preparing source for an already-published scheduled
+          # release, but still provide valid outputs.
+          if [ "$SKIP_BUILD" = "true" ]; then
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+            echo "skip_build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # ---------------------------------------------------------------
+          # Fetch the selected upstream tag into a private local namespace.
+          #
+          # This avoids conflicting with release tags belonging to the fork.
+          # ---------------------------------------------------------------
+          git fetch upstream-origin \
+            "+refs/tags/${RELEASE_TAG}:refs/upstream-tags/${RELEASE_TAG}"
+
+          RELEASE_BASE_SHA="$(
+            git rev-parse "refs/upstream-tags/${RELEASE_TAG}^{commit}"
+          )"
+
+          echo "Upstream ${RELEASE_TAG} commit: $RELEASE_BASE_SHA"
+
+          # ---------------------------------------------------------------
+          # Fetch persistent native-app patch branch.
+          # ---------------------------------------------------------------
+          git fetch origin \
+            "+refs/heads/${PATCH_BRANCH}:refs/remotes/origin/${PATCH_BRANCH}"
+
+          if ! git rev-parse --verify \
+            "origin/${PATCH_BRANCH}^{commit}" >/dev/null 2>&1; then
+
+            echo "::error::Patch branch origin/${PATCH_BRANCH} does not exist."
+            exit 1
+          fi
+
+          echo "Using patch branch: origin/${PATCH_BRANCH}"
+
+          # ---------------------------------------------------------------
+          # Determine where the native patch branch diverged from upstream.
+          #
+          # IMPORTANT:
+          # We intentionally determine the patch base against CURRENT
+          # upstream/main, not against the selected historical release.
+          #
+          # This prevents newer upstream commits from being mistaken for
+          # native fixes when manually building an older release.
+          # ---------------------------------------------------------------
+          PATCH_BASE="$(
+            git merge-base \
+              upstream-origin/main \
+              "origin/${PATCH_BRANCH}"
+          )"
+
+          if [ -z "$PATCH_BASE" ]; then
+            echo "::error::Could not determine patch branch base."
+            exit 1
+          fi
+
+          echo "Native patch base: $PATCH_BASE"
+
+          # Patch branches should be linear. Merging main into this branch
+          # makes it ambiguous which commits are actual native fixes.
+          if git rev-list \
+            --merges \
+            "${PATCH_BASE}..origin/${PATCH_BRANCH}" \
+            | grep -q .; then
+
+            echo "::error::${PATCH_BRANCH} contains merge commits."
+            echo "::error::Keep ${PATCH_BRANCH} as a linear patch series."
+            echo "::error::Do not merge main into ${PATCH_BRANCH}."
+            exit 1
+          fi
+
+          PATCH_COMMITS="$(
+            git rev-list \
+              --reverse \
+              "${PATCH_BASE}..origin/${PATCH_BRANCH}"
+          )"
+
+          # ---------------------------------------------------------------
+          # Reset main to the EXACT selected upstream release.
+          # ---------------------------------------------------------------
+          git checkout main
+          git reset --hard "$RELEASE_BASE_SHA"
+
+          echo "Building from exact upstream release:"
+          git log -1 --oneline
+
+          # ---------------------------------------------------------------
+          # Reapply all native-app patch commits, oldest first.
+          # ---------------------------------------------------------------
+          if [ -z "$PATCH_COMMITS" ]; then
+            echo "No native-app patch commits need to be applied."
+          else
+            echo "Native-app fixes to apply:"
+
+            for patch in $PATCH_COMMITS; do
+              git log -1 --oneline "$patch"
+            done
+
+            for patch in $PATCH_COMMITS; do
+              echo "Applying patch $patch"
+
+              if git cherry-pick -X theirs "$patch"; then
+                echo "Applied $patch"
+              else
+                # A real unresolved conflict should stop the build.
+                if git diff --name-only --diff-filter=U | grep -q .; then
+                  echo "::error::Conflict while applying $patch"
+                  git status
+                  git cherry-pick --abort || true
+                  exit 1
+                fi
+
+                # If the patch becomes empty, its change is already present
+                # in this particular upstream release.
+                echo "Patch $patch is already represented upstream; skipping"
+                git cherry-pick --skip || true
+              fi
+            done
+          fi
+
+          # ---------------------------------------------------------------
+          # Preserve fork-owned GitHub workflows.
+          #
+          # Upstream releases may have different workflow files. Keep the
+          # workflows belonging to the fork instead.
+          # ---------------------------------------------------------------
+          git restore \
+            --source=origin/main \
+            -- .github/workflows \
+            2>/dev/null || true
+
+          git add -A
+
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: preserve fork workflows"
+          fi
+
+          # ---------------------------------------------------------------
+          # Push reconstructed patched source to fork main.
+          #
+          # NOTE:
+          # For a manual historical build this intentionally makes fork main
+          # represent that historical upstream release + native fixes.
+          # A later latest/scheduled run will move it forward again.
+          # ---------------------------------------------------------------
+          git push origin main --force-with-lease
+
+          PATCHED_SHA="$(git rev-parse HEAD)"
+
+          echo "Patched release SHA: $PATCHED_SHA"
+          echo "Release tag: $RELEASE_TAG"
+
+          echo "sha=$PATCHED_SHA" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "skip_build=false" >> "$GITHUB_OUTPUT"
+
+
+  # =====================================================================
+  # Electron
+  # =====================================================================
   desktop:
     name: Electron (${{ matrix.os }})
+    needs: sync-upstream
+
+    if: needs.sync-upstream.outputs.skip_build != 'true'
+
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -23,9 +336,13 @@ jobs:
           - ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout patched release
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.sync-upstream.outputs.sha }}
 
-      - uses: actions/setup-node@v6
+      - name: Setup Node
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: "npm"
@@ -35,22 +352,14 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Resolve app version
-        id: app-version
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          DISPATCH_VERSION: ${{ github.event.inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          VERSION="${RELEASE_TAG:-${DISPATCH_VERSION:-$REF_NAME}}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Set app version
         working-directory: frontend
-        run: npm run app:version -- "${{ steps.app-version.outputs.version }}" "${{ github.run_number }}"
+        run: npm run app:version -- "${{ needs.sync-upstream.outputs.release_tag }}" "${{ github.run_number }}"
 
-      - name: Validate desktop release signing
+      # ---------------------------------------------------------------
+      # Validate desktop signing secrets.
+      # ---------------------------------------------------------------
+      - name: Validate desktop signing secrets
         if: matrix.os == 'windows-latest' || matrix.os == 'macos-latest'
         shell: bash
         env:
@@ -59,23 +368,36 @@ jobs:
           MAILFLOW_MAC_CSC_LINK: ${{ secrets.MAILFLOW_MAC_CSC_LINK }}
           MAILFLOW_MAC_CSC_KEY_PASSWORD: ${{ secrets.MAILFLOW_MAC_CSC_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
+
           missing=()
 
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            [ -n "$MAILFLOW_WINDOWS_CSC_LINK" ] || missing+=("MAILFLOW_WINDOWS_CSC_LINK")
-            [ -n "$MAILFLOW_WINDOWS_CSC_KEY_PASSWORD" ] || missing+=("MAILFLOW_WINDOWS_CSC_KEY_PASSWORD")
+            [ -n "$MAILFLOW_WINDOWS_CSC_LINK" ] \
+              || missing+=("MAILFLOW_WINDOWS_CSC_LINK")
+
+            [ -n "$MAILFLOW_WINDOWS_CSC_KEY_PASSWORD" ] \
+              || missing+=("MAILFLOW_WINDOWS_CSC_KEY_PASSWORD")
           fi
 
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
-            [ -n "$MAILFLOW_MAC_CSC_LINK" ] || missing+=("MAILFLOW_MAC_CSC_LINK")
-            [ -n "$MAILFLOW_MAC_CSC_KEY_PASSWORD" ] || missing+=("MAILFLOW_MAC_CSC_KEY_PASSWORD")
+            [ -n "$MAILFLOW_MAC_CSC_LINK" ] \
+              || missing+=("MAILFLOW_MAC_CSC_LINK")
+
+            [ -n "$MAILFLOW_MAC_CSC_KEY_PASSWORD" ] \
+              || missing+=("MAILFLOW_MAC_CSC_KEY_PASSWORD")
           fi
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            printf 'Desktop release signing secrets are required for %s. Missing: %s\n' "${{ matrix.os }}" "${missing[*]}" >&2
+            printf 'Missing signing secrets for %s: %s\n' \
+              "${{ matrix.os }}" \
+              "${missing[*]}" >&2
             exit 1
           fi
 
+      # ---------------------------------------------------------------
+      # Windows
+      # ---------------------------------------------------------------
       - name: Build signed Windows Electron package
         if: matrix.os == 'windows-latest'
         working-directory: frontend
@@ -84,6 +406,9 @@ jobs:
           CSC_LINK: ${{ secrets.MAILFLOW_WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAILFLOW_WINDOWS_CSC_KEY_PASSWORD }}
 
+      # ---------------------------------------------------------------
+      # macOS
+      # ---------------------------------------------------------------
       - name: Build signed macOS Electron package
         if: matrix.os == 'macos-latest'
         working-directory: frontend
@@ -92,6 +417,9 @@ jobs:
           CSC_LINK: ${{ secrets.MAILFLOW_MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAILFLOW_MAC_CSC_KEY_PASSWORD }}
 
+      # ---------------------------------------------------------------
+      # Linux x64
+      # ---------------------------------------------------------------
       - name: Build Linux x64 Electron packages
         if: matrix.os == 'ubuntu-latest'
         working-directory: frontend
@@ -99,6 +427,9 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
+      # ---------------------------------------------------------------
+      # Linux arm64
+      # ---------------------------------------------------------------
       - name: Build Linux arm64 Electron packages
         if: matrix.os == 'ubuntu-latest'
         working-directory: frontend
@@ -122,45 +453,51 @@ jobs:
             frontend/packages/release/*.exe
             frontend/packages/release/*.rpm
 
+
+  # =====================================================================
+  # Android
+  # =====================================================================
   android:
     name: Android
+    needs: sync-upstream
+
+    if: needs.sync-upstream.outputs.skip_build != 'true'
+
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout patched release
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.sync-upstream.outputs.sha }}
 
-      - uses: actions/setup-node@v6
+      - name: Setup Node
+        uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
-      - uses: actions/setup-java@v5
+      - name: Setup Java
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
 
-      - uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
 
-      - name: Resolve app version
-        id: app-version
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          DISPATCH_VERSION: ${{ github.event.inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          VERSION="${RELEASE_TAG:-${DISPATCH_VERSION:-$REF_NAME}}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
       - name: Set app version
         working-directory: frontend
-        run: npm run app:version -- "${{ steps.app-version.outputs.version }}" "${{ github.run_number }}"
+        run: npm run app:version -- "${{ needs.sync-upstream.outputs.release_tag }}" "${{ github.run_number }}"
 
+      # ---------------------------------------------------------------
+      # Prepare Android release keystore.
+      # ---------------------------------------------------------------
       - name: Prepare Android release signing
         shell: bash
         env:
@@ -169,24 +506,39 @@ jobs:
           MAILFLOW_ANDROID_KEY_ALIAS: ${{ secrets.MAILFLOW_ANDROID_KEY_ALIAS }}
           MAILFLOW_ANDROID_KEY_PASSWORD: ${{ secrets.MAILFLOW_ANDROID_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
+
           missing=()
-          [ -n "$MAILFLOW_ANDROID_KEYSTORE_BASE64" ] || missing+=("MAILFLOW_ANDROID_KEYSTORE_BASE64")
-          [ -n "$MAILFLOW_ANDROID_STORE_PASSWORD" ] || missing+=("MAILFLOW_ANDROID_STORE_PASSWORD")
-          [ -n "$MAILFLOW_ANDROID_KEY_ALIAS" ] || missing+=("MAILFLOW_ANDROID_KEY_ALIAS")
-          [ -n "$MAILFLOW_ANDROID_KEY_PASSWORD" ] || missing+=("MAILFLOW_ANDROID_KEY_PASSWORD")
+
+          [ -n "$MAILFLOW_ANDROID_KEYSTORE_BASE64" ] \
+            || missing+=("MAILFLOW_ANDROID_KEYSTORE_BASE64")
+
+          [ -n "$MAILFLOW_ANDROID_STORE_PASSWORD" ] \
+            || missing+=("MAILFLOW_ANDROID_STORE_PASSWORD")
+
+          [ -n "$MAILFLOW_ANDROID_KEY_ALIAS" ] \
+            || missing+=("MAILFLOW_ANDROID_KEY_ALIAS")
+
+          [ -n "$MAILFLOW_ANDROID_KEY_PASSWORD" ] \
+            || missing+=("MAILFLOW_ANDROID_KEY_PASSWORD")
 
           if [ "${#missing[@]}" -gt 0 ]; then
-            printf 'Android release signing secrets are required. Missing: %s\n' "${missing[*]}" >&2
+            printf 'Missing Android signing secrets: %s\n' \
+              "${missing[*]}" >&2
             exit 1
           fi
 
-          if [ -n "$MAILFLOW_ANDROID_KEYSTORE_BASE64" ]; then
-            mkdir -p "$RUNNER_TEMP/mailflow-signing"
-            echo "$MAILFLOW_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/mailflow-signing/release.keystore"
-            echo "MAILFLOW_ANDROID_STORE_FILE=$RUNNER_TEMP/mailflow-signing/release.keystore" >> "$GITHUB_ENV"
-          fi
+          mkdir -p "$RUNNER_TEMP/mailflow-signing"
 
-      - name: Build Android package
+          echo "$MAILFLOW_ANDROID_KEYSTORE_BASE64" \
+            | base64 --decode \
+            > "$RUNNER_TEMP/mailflow-signing/release.keystore"
+
+          echo \
+            "MAILFLOW_ANDROID_STORE_FILE=$RUNNER_TEMP/mailflow-signing/release.keystore" \
+            >> "$GITHUB_ENV"
+
+      - name: Build signed Android package
         working-directory: frontend
         run: npm run android:dist
         env:
@@ -197,9 +549,14 @@ jobs:
       - name: List Android release artifacts
         if: always()
         working-directory: frontend
-        run: find packages/android/app/build -maxdepth 6 -type f | sort || true
+        run: |
+          find packages/android/app/build \
+            -maxdepth 6 \
+            -type f \
+            | sort \
+            || true
 
-      - name: Upload Android artifact
+      - name: Upload Android artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mailflow-android
@@ -208,37 +565,100 @@ jobs:
             frontend/packages/release/*.aab
             frontend/packages/release/*.apk
 
+
+  # =====================================================================
+  # GitHub Release
+  # =====================================================================
   release:
-    name: Attach to GitHub Release
+    name: Publish GitHub Release
+
     needs:
+      - sync-upstream
       - desktop
       - android
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+
+    if: >-
+      always() &&
+      needs.sync-upstream.result == 'success' &&
+      needs.sync-upstream.outputs.skip_build != 'true' &&
+      needs.desktop.result == 'success' &&
+      needs.android.result == 'success'
+
     runs-on: ubuntu-latest
 
-    steps:
-      - name: Resolve app version
-        id: app-version
-        shell: bash
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-          DISPATCH_VERSION: ${{ github.event.inputs.version }}
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          VERSION="${RELEASE_TAG:-${DISPATCH_VERSION:-$REF_NAME}}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+    permissions:
+      contents: write
 
-      - name: Download artifacts
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.sync-upstream.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Publish release files
+      - name: Show release artifacts
+        shell: bash
+        run: find artifacts -type f | sort
+
+      - name: Copy upstream release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.sync-upstream.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          echo "Fetching release notes for ${UPSTREAM_ORG}/${REPO} ${RELEASE_TAG}"
+
+          gh release view "$RELEASE_TAG" \
+            --repo "${UPSTREAM_ORG}/${REPO}" \
+            --json body \
+            --jq '.body' \
+            > upstream-release-notes.md
+
+          if [ ! -s upstream-release-notes.md ]; then
+            echo "::warning::Upstream release body is empty."
+            echo "Release ${RELEASE_TAG}" > upstream-release-notes.md
+          fi
+
+          echo "Upstream release notes copied."
+      
+      # ---------------------------------------------------------------
+      # Make sure the release tag points at the exact patched source that
+      # produced these binaries.
+      # ---------------------------------------------------------------
+      - name: Create or update release tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.sync-upstream.outputs.release_tag }}
+          RELEASE_SHA: ${{ needs.sync-upstream.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -f "$RELEASE_TAG" "$RELEASE_SHA"
+
+          git push origin \
+            "refs/tags/$RELEASE_TAG" \
+            --force
+
+      - name: Publish native release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.app-version.outputs.version }}
+          tag_name: ${{ needs.sync-upstream.outputs.release_tag }}
+          target_commitish: ${{ needs.sync-upstream.outputs.sha }}
+          name: ${{ needs.sync-upstream.outputs.release_tag }}
+          body_path: upstream-release-notes.md
+          make_latest: true
+          fail_on_unmatched_files: true
           files: |
-            artifacts/**/*.aab
             artifacts/**/*.apk
             artifacts/**/*.deb
             artifacts/**/*.dmg
