@@ -1,8 +1,6 @@
 name: Update Sponsors & Star Chart
 
 on:
-  schedule:
-    - cron: '0 3 * * 0'   # weekly, Sunday 03:00 UTC
   workflow_dispatch:
 
 jobs:
