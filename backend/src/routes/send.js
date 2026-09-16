@@ -142,7 +142,9 @@ router.post('/send', async (req, res) => {
     : null;
   const idemKeyRedis = idempotencyKey ? `send_idem:${req.session.userId}:${idempotencyKey}` : null;
   if (idemKeyRedis) {
-    const cached = await redisClient.get(idemKeyRedis).catch(() => null);
+    let cached;
+    try { cached = await redisClient.get(idemKeyRedis); }
+    catch { return res.status(503).json({ error: 'Sending is temporarily unavailable. Please try again shortly.' }); }
     if (cached === '__inflight__') return res.status(409).json({ error: 'This message is already being sent.' });
     if (cached) return res.json(JSON.parse(cached));
   }
@@ -160,6 +162,7 @@ router.post('/send', async (req, res) => {
 
   if (forwardedAttachments !== undefined) {
     if (!Array.isArray(forwardedAttachments)) return res.status(400).json({ error: 'forwardedAttachments must be an array' });
+    if (forwardedAttachments.length > 100) return res.status(400).json({ error: 'Too many forwarded attachments (max 100)' });
     for (const [i, fa] of forwardedAttachments.entries()) {
       if (typeof fa.messageId !== 'string' || !UUID_RE.test(fa.messageId)) return res.status(400).json({ error: `forwardedAttachments[${i}].messageId is invalid` });
       if (typeof fa.part !== 'string' || !fa.part.trim()) return res.status(400).json({ error: `forwardedAttachments[${i}].part is required` });
@@ -216,39 +219,62 @@ router.post('/send', async (req, res) => {
   let resolvedFwdAttachments = [];
   if (forwardedAttachments?.length) {
     try {
-      resolvedFwdAttachments = await Promise.all(forwardedAttachments.map(async (fa) => {
-        const msgResult = await query(
-          `SELECT m.uid, m.folder, m.attachments, m.account_id FROM messages m
-           JOIN email_accounts a ON m.account_id = a.id
-           WHERE m.id = $1 AND a.user_id = $2`,
-          [fa.messageId, req.session.userId]
-        );
-        if (!msgResult.rows.length) throw Object.assign(new Error('Forwarded message not found'), { status: 404 });
-        const msg = msgResult.rows[0];
+      // Resolve every referenced message in a SINGLE ownership-scoped query so a large
+      // forwardedAttachments array can't fan out into one DB round-trip per entry.
+      const distinctMsgIds = [...new Set(forwardedAttachments.map(fa => fa.messageId))];
+      const msgRows = await query(
+        `SELECT m.id, m.uid, m.folder, m.attachments, m.account_id FROM messages m
+         JOIN email_accounts a ON m.account_id = a.id
+         WHERE m.id = ANY($1::uuid[]) AND a.user_id = $2`,
+        [distinctMsgIds, req.session.userId]
+      );
+      const msgById = new Map(msgRows.rows.map(m => [m.id, m]));
 
+      // Build the fetch plan (one entry per requested attachment, order preserved) and sum the
+      // DECLARED sizes so an oversized batch is rejected BEFORE any IMAP fetch happens.
+      const uploadedBytes = (attachments || []).reduce(
+        (sum, a) => sum + (typeof a.content === 'string' ? Math.ceil(a.content.length * 0.75) : 0), 0
+      );
+      let declaredFwdBytes = 0;
+      const fetchPlan = forwardedAttachments.map((fa) => {
+        const msg = msgById.get(fa.messageId);
+        if (!msg) throw Object.assign(new Error('Forwarded message not found'), { status: 404 });
         const storedAtts = typeof msg.attachments === 'string'
           ? JSON.parse(msg.attachments || '[]')
           : (msg.attachments || []);
         const att = storedAtts.find(a => a.part === fa.part);
         if (!att) throw Object.assign(new Error('Attachment not found in message'), { status: 404 });
+        declaredFwdBytes += Number(att.size) || 0;
+        return { msg, att };
+      });
+      if (uploadedBytes + declaredFwdBytes > 26_214_400) {
+        return res.status(400).json({ error: 'Total attachment size exceeds 25 MB' });
+      }
 
-        const accResult = await query('SELECT * FROM email_accounts WHERE id = $1', [msg.account_id]);
-        if (!accResult.rows.length) throw Object.assign(new Error('Account not found'), { status: 404 });
+      // Load the owning accounts once, then fetch bodies with bounded concurrency so we never
+      // open a burst of fresh IMAP connections (fetchAttachment opens a connection per call).
+      const distinctAcctIds = [...new Set(fetchPlan.map(p => p.msg.account_id))];
+      const acctRows = await query('SELECT * FROM email_accounts WHERE id = ANY($1::uuid[])', [distinctAcctIds]);
+      const acctById = new Map(acctRows.rows.map(a => [a.id, a]));
 
-        const buffer = await imapManager.fetchAttachment(accResult.rows[0], msg.uid, msg.folder, fa.part);
-        if (!buffer) throw Object.assign(new Error(`Could not fetch attachment: ${att.filename}`), { status: 502 });
+      const FWD_FETCH_CONCURRENCY = 4;
+      for (let i = 0; i < fetchPlan.length; i += FWD_FETCH_CONCURRENCY) {
+        const batch = fetchPlan.slice(i, i + FWD_FETCH_CONCURRENCY);
+        const fetched = await Promise.all(batch.map(async ({ msg, att }) => {
+          const acct = acctById.get(msg.account_id);
+          if (!acct) throw Object.assign(new Error('Account not found'), { status: 404 });
+          const buffer = await imapManager.fetchAttachment(acct, msg.uid, msg.folder, att.part);
+          if (!buffer) throw Object.assign(new Error(`Could not fetch attachment: ${att.filename}`), { status: 502 });
+          return {
+            filename: sanitizeHeaderValue(att.filename || 'attachment'),
+            content: buffer,
+            contentType: att.type || 'application/octet-stream',
+          };
+        }));
+        resolvedFwdAttachments.push(...fetched);
+      }
 
-        return {
-          filename: sanitizeHeaderValue(att.filename || 'attachment'),
-          content: buffer,
-          contentType: att.type || 'application/octet-stream',
-        };
-      }));
-
-      // Combined size check: user uploads + forwarded content
-      const uploadedBytes = (attachments || []).reduce(
-        (sum, a) => sum + (typeof a.content === 'string' ? Math.ceil(a.content.length * 0.75) : 0), 0
-      );
+      // Exact backstop: declared sizes can under-report, so re-check against fetched bytes.
       const fwdBytes = resolvedFwdAttachments.reduce((sum, a) => sum + (a.content?.length || 0), 0);
       if (uploadedBytes + fwdBytes > 26_214_400) {
         return res.status(400).json({ error: 'Total attachment size exceeds 25 MB' });
@@ -258,6 +284,7 @@ router.post('/send', async (req, res) => {
     }
   }
 
+  let reservationAcquired = false;
   let delivered = false; // true once transport.sendMail has actually handed off the message
   try {
     const smtp = await createAccountSmtpTransport(account);
@@ -342,8 +369,11 @@ router.post('/send', async (req, res) => {
     if (idemKeyRedis) {
       // TTL comfortably above the worst-case send (large attachment over a slow SMTP
       // server) so the in-flight guard cannot lapse while this request is still running.
-      const reserved = await redisClient.set(idemKeyRedis, '__inflight__', { NX: true, EX: 300 }).catch(() => 'OK');
-      if (reserved === null) return res.status(409).json({ error: 'This message is already being sent.' });
+      let reserved;
+      try { reserved = await redisClient.set(idemKeyRedis, '__inflight__', { NX: true, EX: 300 }); }
+      catch { return res.status(503).json({ error: 'Sending is temporarily unavailable. Please try again shortly.' }); }
+      if (reserved !== 'OK') return res.status(409).json({ error: 'This message is already being sent.' });
+      reservationAcquired = true;
     }
 
     await transport.sendMail(mailOptions);
@@ -510,20 +540,17 @@ router.post('/send', async (req, res) => {
     if (idemKeyRedis) redisClient.set(idemKeyRedis, JSON.stringify(sendResult), { EX: 86400 }).catch(() => {});
     res.json(sendResult);
   } catch (err) {
-    console.error('Send failed:', err.message);
-    if (idemKeyRedis) {
-      if (delivered) {
-        // The message WAS delivered but a later step threw. Persist a DURABLE success
-        // result (not just the short-lived reservation) so a retry at ANY time returns it
-        // instead of re-running transport.sendMail — otherwise the reservation would lapse
-        // and the same key could deliver a second copy.
-        redisClient.set(idemKeyRedis, JSON.stringify({ ok: true }), { EX: 86400 }).catch(() => {});
-      } else {
-        // Delivery never happened — release so a genuine retry after a pre-send failure
-        // can proceed immediately.
-        redisClient.del(idemKeyRedis).catch(() => {});
-      }
+    if (delivered) {
+      // SMTP already accepted this message. A Sent-folder or metadata failure
+      // must not invite the user to send it again.
+      console.error('Post-send processing failed:', err.message);
+      const sendResult = { ok: true, sentCopySaved: false };
+      if (idemKeyRedis) redisClient.set(idemKeyRedis, JSON.stringify(sendResult), { EX: 86400 }).catch(() => {});
+      return res.json(sendResult);
     }
+    console.error('Send failed:', err.message);
+    // A failure before reservation must not delete a concurrent request's lock.
+    if (idemKeyRedis && reservationAcquired) redisClient.del(idemKeyRedis).catch(() => {});
     res.status(500).json({ error: sanitizeSmtpError(err) });
   }
 });

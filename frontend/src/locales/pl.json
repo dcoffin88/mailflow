@@ -7,6 +7,7 @@
     "add": "Dodaj",
     "remove": "Usuń",
     "copy": "Kopiuj",
+    "copyFailed": "Kopiowanie nie powiodło się. Zaznacz tekst i skopiuj ręcznie.",
     "back": "Wstecz",
     "undo": "Cofnij",
     "view": "Wyświetl",
@@ -191,6 +192,7 @@
     "selectToRead": "Wybierz wiadomość do przeczytania",
     "noSubject": "(brak tematu)",
     "to": "Do:",
+    "via": "przez",
     "attachment_one": "{{count}} załącznik",
     "attachment_few": "{{count}} załączniki",
     "attachment_many": "{{count}} załączników",
@@ -202,6 +204,13 @@
     "allowSender": "Zawsze zezwalaj nadawcy {{email}}",
     "allowDomain": "Zawsze zezwalaj domenie @{{domain}}",
     "downloading": "Pobieranie…",
+    "attachmentRisk": {
+      "block": "Niebezpieczny typ pliku (.{{ext}}) — może uruchomić kod na komputerze",
+      "warn": "Ryzykowny typ pliku (.{{ext}}) — może zawierać makra lub fałszywą stronę logowania",
+      "notice": "Archiwum — zawartości nie można sprawdzić",
+      "doubleExt": "Ukryte rozszerzenie: .{{ext}} — prawdziwy typ to ostatni",
+      "confirm": "kliknij ponownie, aby mimo to pobrać"
+    },
     "downloadAll": "Pobierz wszystko",
     "reply": "Odpowiedz",
     "replyAll": "Odpowiedz wszystkim",
@@ -340,6 +349,7 @@
     "releaseToSync": "Puść, aby zsynchronizować",
     "noSearchResults": "Nie znaleziono wyników",
     "noSearchResultsDesc": "Brak wyników dla {{query}}",
+    "searchFailed": "Wyszukiwanie nie powiodło się",
     "clearSearch": "Wyczyść wyszukiwanie",
     "searchHelp": {
       "title": "Operatory wyszukiwania",
@@ -424,6 +434,8 @@
     "renameFailed": "Zmiana nazwy nie powiodła się",
     "deleteFailed": "Usuwanie nie powiodło się",
     "emptyFailed": "Opróżnianie nie powiodło się",
+    "emptying": "Opróżnianie „{{name}}”…",
+    "emptied": "Folder opróżniony",
     "backToAccounts": "Powrót do kont",
     "updateAvailable": "Dostępna aktualizacja: v{{version}}"
   },
@@ -582,6 +594,9 @@
       "toggleRightSidebar": {
         "label": "Przełącz prawy panel",
         "description": "Ukryj lub pokaż prawy panel boczny"
+      },
+      "gtdUndo": {
+        "description": "Cofnij ostatnią klasyfikację GTD"
       }
     }
   },
@@ -617,9 +632,30 @@
     "errorProcess": "Nie udało się przetworzyć obrazu."
   },
   "admin": {
+    "cleanup": {
+      "title": "Porządki w skrzynce",
+      "intro": "Znajdź masową pocztę zaśmiecającą skrzynkę odbiorczą i uporządkuj ją. Wybierz, czy ją zarchiwizować (zachowana i przeszukiwalna), czy przenieść do kosza (można ją odzyskać, dopóki go nie opróżnisz).",
+      "account": "Konto",
+      "summary": "{{bulk}} z {{total}} wiadomości w skrzynce to poczta masowa ({{pct}}%).",
+      "tier1Title": "Najwięksi nadawcy masowi",
+      "tier1Desc": "To nadawcy newsletterów i marketingu o największej liczbie wiadomości w Twojej skrzynce odbiorczej. Działanie na jednym przetwarza całą pocztę tego nadawcy w skrzynce odbiorczej wybraną akcją.",
+      "noneFound": "Nie znaleziono nadawców masowych.",
+      "moveToTrash": "Przenieś do Kosza",
+      "confirm": "Przenieść wszystkie {{count}} wiadomości od {{sender}} do Kosza? Można je odzyskać z Kosza, dopóki go nie opróżnisz.",
+      "tier2Title": "Typowe hasła promocyjne",
+      "tier2Desc": "Wyszukaj te hasła, aby samodzielnie przejrzeć i usunąć resztę. Dotyczą wielu nadawców, więc przejrzyj wyniki przed usunięciem.",
+      "tier3Title": "Sprzątanie reszty",
+      "tier3Desc": "W przypadku pozostałych wyszukaj według nadawcy lub słowa kluczowego, zaznacz wszystko i usuń. Usunięcia najpierw trafiają do Kosza, więc możesz sprawdzić przed jego opróżnieniem.",
+      "action": "Akcja porządkowania",
+      "actionArchive": "Archiwizuj (zalecane)",
+      "archive": "Archiwizuj",
+      "confirmArchive": "Zarchiwizować wszystkie {{count}} wiadomości od {{sender}} w skrzynce odbiorczej? Pozostaną w folderze Archiwum i nadal będą dostępne w wyszukiwaniu.",
+      "noArchiveFolder": "To konto nie ma folderu archiwum, więc dostępne jest tylko Przenieś do kosza."
+    },
     "title": "Ustawienia",
     "close": "Zamknij",
     "tabs": {
+      "cleanup": "Porządki",
       "accounts": "Konta",
       "rules": "Reguły",
       "appearance": "Wygląd",
@@ -635,6 +671,7 @@
       "about": "Informacje",
       "ai": "Asystent AI",
       "aiActions": "Działania AI",
+      "antispam": "Antyspam",
       "categories": "Kategorie",
       "groupAccountMail": "Konto i poczta",
       "groupDisplay": "Wyświetlanie",
@@ -702,6 +739,7 @@
       "runButton": "Uruchom reguły na skrzynce odbiorczej",
       "running": "Uruchamianie…",
       "runResult": "Gotowe — {{matched}} z {{processed}} wiadomości pasuje",
+      "runStarted": "Działa w tle — otrzymasz powiadomienie po zakończeniu",
       "runError": "Nie udało się uruchomić reguł"
     },
     "blockList": {
@@ -772,6 +810,15 @@
       "categorizationSection": "Kategoryzowanie poczty",
       "categorizationEnabled": "Włącz kategoryzowanie skrzynki odbiorczej",
       "categorizationEnabledDesc": "Sortuj przychodzące wiadomości do kart kategorii. Domyślnie wyłączone.",
+      "antispamSection": "Antyspam",
+      "antispamEnabled": "Włącz antyspam dla tego konta",
+      "antispamEnabledDesc": "Przychodzące wiadomości są klasyfikowane automatycznie; spam o wysokiej pewności jest przenoszony do folderu Junk.",
+      "trustedAuthservLabel": "Zaufany identyfikator Authentication-Results",
+      "trustedAuthservPlaceholder": "mx.example.com",
+      "trustedAuthservDesc": "Uwzględniane są tylko nagłówki Authentication-Results zapisane przez ten identyfikator. Pozostaw puste, aby ignorować wszystkie — niezaufany nagłówek może twierdzić dowolny wynik, także pass.",
+      "trustedAuthservDetected": "Widziane w ostatnich wiadomościach (kliknij, aby użyć):",
+      "trustedAuthservDetectedNone": "Brak danych — wiadomości są analizowane, gdy antyspam jest włączony dla tego konta.",
+      "trustedAuthservWarn": "Ufaj tylko identyfikatorowi, który rozpoznajesz jako serwer odbierający Twojego dostawcy.",
       "enabledGlobally": "Włączone globalnie"
     },
     "folderMappings": {
@@ -881,6 +928,9 @@
       "defaultReplyDesc": "Przycisk „Odpowiedz” wysyła wiadomość tylko do nadawcy",
       "defaultReplyAll": "Odpowiedz wszystkim",
       "defaultReplyAllDesc": "Przycisk „Odpowiedz wszystkim” wysyła wiadomość do wszystkich odbiorców",
+      "defaultSender": "Domyślny nadawca",
+      "defaultSenderDesc": "Adres, z którego wysyłane są nowe wiadomości tworzone poza konkretnym kontem, na przykład ze wspólnej skrzynki. Odpowiedzi zawsze korzystają z konta, które otrzymało wiadomość.",
+      "defaultSenderLastUsed": "Ostatnio używane konto",
       "markReadBehavior": "Oznacz jako przeczytane",
       "markReadImmediate": "Natychmiast",
       "markReadImmediateDesc": "Oznaczaj wiadomości jako przeczytane natychmiast po ich otwarciu.",
@@ -1285,6 +1335,8 @@
       "adminGroupValue": "Wartość grupy administratorów",
       "adminGroupValuePh": "mailflow-admins",
       "adminGroupValueDesc": "Nazwa grupy nadającej uprawnienia administratora. Użytkownicy w tej grupie zostają administratorami przy każdym logowaniu SSO; użytkownicy spoza niej tracą uprawnienia administratora.",
+      "loginMatchClaim": "Dopasuj istniejące konta według",
+      "loginMatchClaimDesc": "Oświadczenie (claim) OIDC porównywane z nazwą użytkownika każdego konta MailFlow przy pierwszym powiązaniu logowania SSO z istniejącym kontem (tryb udostępniania „tylko logowanie do istniejących kont”). Wartość domyślna to email. Użyj preferred_username, upn itp. dla dostawców tożsamości, których nazwy użytkowników nie są adresami e-mail — tylko jeśli dostawca gwarantuje, że oświadczenie jest unikalne i nie może być edytowane przez użytkownika.",
       "save": "Zapisz",
       "editButton": "Edytuj",
       "deleteButton": "Usuń",
@@ -1343,6 +1395,32 @@
         "deviceCodeDeclined": "Autoryzacja została odrzucona.",
         "deviceCodeError": "Wystąpił błąd. Spróbuj ponownie.",
         "deviceCodeCancel": "Anuluj"
+      },
+      "google": {
+        "title": "Gmail / Google Workspace",
+        "description": "OAuth2 dla skrzynek Gmail i Google Workspace — wymagane, gdy administrator wyłączył hasła aplikacji",
+        "configured": "Skonfigurowano",
+        "notConfigured": "Nieskonfigurowane",
+        "redirecting": "Przekierowywanie…",
+        "connect": "Połącz konto Google",
+        "setupTitle": "Konfiguracja klienta OAuth w Google Cloud",
+        "step1": "Przejdź do console.cloud.google.com i wybierz (lub utwórz) projekt. W przypadku domeny Workspace zaloguj się kontem z tej domeny, aby projekt należał do organizacji",
+        "step2": "Interfejsy API i usługi → Biblioteka → włącz Gmail API",
+        "step3": "Ekran zgody OAuth → ustaw typ użytkownika, a następnie dodaj zakres https://mail.google.com/",
+        "step4": "Dane logowania → Utwórz dane logowania → Identyfikator klienta OAuth → Aplikacja internetowa i dodaj pokazany poniżej URI przekierowania",
+        "scopeNote": "https://mail.google.com/ to zakres ograniczony. Wybierz typ użytkownika „Wewnętrzny”, jeśli projekt należy do organizacji Workspace: weryfikacja nie jest wymagana, a tokeny odświeżania nie wygasają. „Zewnętrzny” w trybie testowym działa od razu, ale Google unieważnia tokeny odświeżania po 7 dniach, więc konta trzeba łączyć ponownie co tydzień.",
+        "clientId": "Identyfikator klienta",
+        "clientIdPh": "xxxxxxxx.apps.googleusercontent.com",
+        "clientSecret": "Tajny klucz klienta",
+        "clientSecretPh": "GOCSPX-…",
+        "redirectUri": "URI przekierowania",
+        "redirectUriNote": "Musi dokładnie odpowiadać autoryzowanemu adresowi przekierowania klienta OAuth. Sugerowany: {{uri}}",
+        "save": "Zapisz konfigurację",
+        "savedNote": "Konfiguracja zapisana. Kliknij „Połącz konto Google”, aby autoryzować.",
+        "connectedNote": "Konto Google zostało pomyślnie połączone! Sprawdź kartę Konta.",
+        "userNoteConfigured": "Administrator skonfigurował logowanie Google. Połącz poniżej swoje konto Gmail lub Google Workspace.",
+        "userNoteNotConfigured": "Logowanie Google nie zostało jeszcze skonfigurowane przez administratora. Poproś administratora o jego konfigurację.",
+        "remove": "Usuń"
       },
       "todoist": {
         "title": "Todoist",
@@ -1452,7 +1530,68 @@
     "failHamTitle": "Nie udało się oznaczyć wiadomości jako niebędącej spamem",
     "failBody": "Serwer pocztowy odrzucił przeniesienie.",
     "failHamBody": "Serwer pocztowy odrzucił przeniesienie.",
-    "failBodyBulk": "Nie udało się przenieść {{count}} wiadomości."
+    "failBodyBulk": "Nie udało się przenieść {{count}} wiadomości.",
+    "title": "Antyspam",
+    "subtitle": "Filtr antyspamowy ML dla pojedynczego użytkownika. Uczy się na podstawie ręcznych oznaczeń spam/nie spam; nowe wiadomości są klasyfikowane automatycznie, gdy opcja jest włączona dla konta.",
+    "saved": "Ustawienia zapisane",
+    "resetAllDone": "Dane treningowe wyczyszczone — usunięto {{n}} rekordów",
+    "retrainDone": "Ponowne trenowanie zakończone — przetworzono {{n}} użytkowników",
+    "retrainBusy": "Ponowne uczenie już trwa — zakończy się samo",
+    "statusTitle": "Stan modelu",
+    "statusHelp": "Model jest przypisany do użytkownika i współdzielony między jego kontami. Poniżej 50 rekordów treningowych używane są tylko wbudowane reguły.",
+    "statMaturity": "Dojrzałość",
+    "statRecords": "Rekordy treningowe",
+    "statVersion": "Wersja modelu",
+    "statLastTrained": "Ostatnie trenowanie",
+    "statDecay": "Okno wygaszania",
+    "never": "nigdy",
+    "days": "dni",
+    "maturity": {
+      "mature": "Dojrzały",
+      "fresh": "Świeży",
+      "insufficient": "Niewystarczający"
+    },
+    "masterEnable": "Włącz antyspam",
+    "masterEnableHelp": "Główny przełącznik automatycznej klasyfikacji. Każde konto ma dodatkowo własny przełącznik.",
+    "perAccountHint": "Przełącznik dla konta: Konta → wybierz konto → sekcja Antyspam.",
+    "thresholdsTitle": "Progi",
+    "thresholdsHelp": "Wyższe wartości oznaczają mniej fałszywych alarmów, ale przepuszczają więcej spamu.",
+    "spamThreshold": "Próg spamu",
+    "autoMoveThreshold": "Próg automatycznego przenoszenia",
+    "save": "Zapisz",
+    "decayTitle": "Wygaszanie treningu",
+    "decayHelp": "Starsze dane treningowe mają niższą wagę zgodnie z tym okresem połowicznego rozpadu (7–365 dni).",
+    "dangerTitle": "Strefa niebezpieczna",
+    "retrainNow": "Trenuj ponownie teraz",
+    "resetConfirmWarn": "Ta operacja jest nieodwracalna: wszystkie dane treningowe zostaną usunięte.",
+    "resetConfirmYes": "Tak, usuń dane treningowe",
+    "resetAll": "Usuń wszystkie dane treningowe",
+    "deletionsTitle": "Ostatnie usunięcia",
+    "deleteScope": {
+      "per_account": "Jedno konto",
+      "all": "Wszystkie konta"
+    },
+    "records": "rekordów",
+    "howItWorks": "Jak to działa: Twoje ręczne oznaczenia „Oznacz jako spam” / „Nie spam” trenują model. Wiadomości sklasyfikowane automatycznie nigdy go nie douczają. Reguły są zawsze aktywne; model ML dołącza od 50 rekordów.",
+    "badgeLabel": "spam",
+    "badgeTitle": "Automatycznie sklasyfikowano jako spam — kliknij, aby zobaczyć szczegóły",
+    "explainTitle": "Dlaczego oznaczono to jako spam?",
+    "explainVerdict": "Werdykt",
+    "explainMethod": "Metoda",
+    "explainConfidence": "Pewność",
+    "verdict": {
+      "spam": "Spam",
+      "ham": "Nie spam",
+      "unsure": "Niepewne"
+    },
+    "method": {
+      "rules": "Reguły",
+      "blended": "Reguły + ML"
+    },
+    "rulesFiredTitle": "Aktywowane reguły",
+    "noRulesFired": "Nie aktywowano żadnej reguły",
+    "mlTokensTitle": "Najważniejsze tokeny",
+    "noMlTokens": "Brak tokenów ML"
   },
   "contacts": {
     "title": "Kontakty",
@@ -1494,7 +1633,6 @@
     "carddavBadge": "Zsynchronizowano z CardDAV"
   },
   "todoist": {
-    "betaLabel": "Beta",
     "title": "Utwórz zadanie Todoist",
     "taskTitle": "Tytuł zadania",
     "taskTitlePh": "Co trzeba zrobić?",
@@ -1544,10 +1682,24 @@
       "delegated": "Delegowane",
       "someday": "Kiedyś",
       "reference": "Materiały"
-    }
+    },
+    "undoFailed": "Nie udało się cofnąć etykiety"
   },
   "window": {
     "minimize": "Minimalizuj",
     "close": "Zamknij"
+  },
+  "diagnostics": {
+    "section": "Diagnostyka",
+    "blurb": "Zanonimizowany raport, którym możesz się podzielić, aby pomóc w rozwiązywaniu problemów. Nie zawiera adresów e-mail, nazwisk, treści wiadomości ani danych poufnych.",
+    "generateReport": "Wygeneruj raport diagnostyczny",
+    "title": "Raport diagnostyczny",
+    "includes": "Zawiera: wersje aplikacji, Twoje środowisko, liczby wiadomości na konto i folder, kategorie błędów synchronizacji oraz stan serwera. Identyfikatory kont i nazwy folderów niestandardowych są zastępowane jednorazowymi skrótami.",
+    "excludes": "Nie zawiera: adresów e-mail, nazwisk, tematów, treści wiadomości, haseł ani kluczy lub tokenów API.",
+    "download": "Pobierz JSON",
+    "copied": "Skopiowano raport",
+    "copyFailed": "Kopiowanie nie powiodło się",
+    "generating": "Generowanie raportu…",
+    "error": "Nie udało się wygenerować raportu."
   }
 }

@@ -7,6 +7,7 @@
     "add": "Add",
     "remove": "Remove",
     "copy": "Copy",
+    "copyFailed": "Copy failed. Select the text and copy manually.",
     "back": "Back",
     "undo": "Undo",
     "view": "View",
@@ -191,6 +192,7 @@
     "selectToRead": "Select a message to read",
     "noSubject": "(no subject)",
     "to": "To:",
+    "via": "via",
     "attachment_one": "{{count}} attachment",
     "attachment_other": "{{count}} attachments",
     "loadingError": "Unable to load message body",
@@ -200,6 +202,13 @@
     "allowSender": "Always allow from {{email}}",
     "allowDomain": "Always allow from @{{domain}}",
     "downloading": "Downloading…",
+    "attachmentRisk": {
+      "block": "Dangerous file type (.{{ext}}) — can run code on your computer",
+      "warn": "Risky file type (.{{ext}}) — may contain macros or a fake login page",
+      "notice": "Archive — contents cannot be inspected",
+      "doubleExt": "Hidden extension: .{{ext}} — the real type is the last one",
+      "confirm": "click again to download anyway"
+    },
     "downloadAll": "Download all",
     "reply": "Reply",
     "replyAll": "Reply All",
@@ -326,6 +335,7 @@
     "releaseToSync": "Release to sync",
     "noSearchResults": "No results found",
     "noSearchResultsDesc": "No results for {{query}}",
+    "searchFailed": "Search failed",
     "clearSearch": "Clear search",
     "searchHelp": {
       "title": "Search operators",
@@ -408,6 +418,8 @@
     "renameFailed": "Rename failed",
     "deleteFailed": "Delete failed",
     "emptyFailed": "Empty failed",
+    "emptying": "Emptying \"{{name}}\"…",
+    "emptied": "Folder emptied",
     "backToAccounts": "Back to accounts",
     "updateAvailable": "Update available: v{{version}}"
   },
@@ -563,6 +575,9 @@
         "label": "Mark Delegated",
         "description": "Classify the selected message as Delegated"
       },
+      "gtdUndo": {
+        "description": "Undo the latest GTD classification"
+      },
       "toggleRightSidebar": {
         "label": "Toggle right sidebar",
         "description": "Hide or show the right sidebar"
@@ -601,9 +616,30 @@
     "errorProcess": "Could not process image."
   },
   "admin": {
+    "cleanup": {
+      "title": "Mailbox Cleanup",
+      "intro": "Find bulk mail cluttering your inbox and clear it out. Choose whether to archive it (kept and searchable) or move it to Trash (recoverable until you empty it).",
+      "account": "Account",
+      "summary": "{{bulk}} of {{total}} inbox messages are bulk mail ({{pct}}%).",
+      "tier1Title": "Top bulk senders",
+      "tier1Desc": "These are the highest-volume newsletter and marketing senders in your inbox. Acting on one processes all of that sender's inbox mail with your chosen action.",
+      "noneFound": "No bulk senders found.",
+      "moveToTrash": "Move to Trash",
+      "confirm": "Move all {{count}} inbox messages from {{sender}} to Trash? They can be recovered from Trash until you empty it.",
+      "tier2Title": "Common promotional terms",
+      "tier2Desc": "Search these terms to review and delete the rest yourself. They span many senders, so skim the results before deleting.",
+      "tier3Title": "Cleaning up the rest",
+      "tier3Desc": "For everything else, search by sender or keyword, select all, and delete. Deletes always move to Trash first, so you can review before emptying it.",
+      "action": "Cleanup action",
+      "actionArchive": "Archive (recommended)",
+      "archive": "Archive",
+      "confirmArchive": "Archive all {{count}} inbox messages from {{sender}}? They stay in your Archive folder and remain searchable.",
+      "noArchiveFolder": "This account has no archive folder, so only Move to Trash is available."
+    },
     "title": "Settings",
     "close": "Close",
     "tabs": {
+      "cleanup": "Cleanup",
       "accounts": "Accounts",
       "rules": "Rules",
       "appearance": "Appearance",
@@ -619,6 +655,7 @@
       "about": "About",
       "ai": "AI Assistant",
       "aiActions": "AI Actions",
+      "antispam": "Antispam",
       "categories": "Categories",
       "groupAccountMail": "Account & Mail",
       "groupDisplay": "Display",
@@ -686,6 +723,7 @@
       "runButton": "Run rules on inbox",
       "running": "Running…",
       "runResult": "Done — {{matched}} of {{processed}} messages matched",
+      "runStarted": "Running in the background — you'll be notified when it finishes",
       "runError": "Failed to run rules"
     },
     "blockList": {
@@ -756,6 +794,15 @@
       "categorizationSection": "Email Categorization",
       "categorizationEnabled": "Enable inbox categorization",
       "categorizationEnabledDesc": "Sort incoming emails into category tabs. Disabled by default.",
+      "antispamSection": "Antispam",
+      "antispamEnabled": "Enable antispam for this account",
+      "antispamEnabledDesc": "Incoming messages are classified automatically; high-confidence spam is moved to the Junk folder.",
+      "trustedAuthservLabel": "Trusted Authentication-Results ID",
+      "trustedAuthservPlaceholder": "mx.example.com",
+      "trustedAuthservDesc": "Only Authentication-Results headers written by this ID are trusted. Leave empty to ignore them all — an untrusted header can claim any result, including a pass.",
+      "trustedAuthservDetected": "Seen on your recent mail (click to use):",
+      "trustedAuthservDetectedNone": "No data yet — messages are inspected once antispam is enabled for this account.",
+      "trustedAuthservWarn": "Only trust an ID you recognize as your mail provider's receiving server.",
       "enabledGlobally": "Enabled globally"
     },
     "folderMappings": {
@@ -865,6 +912,9 @@
       "defaultReplyDesc": "The Reply button sends only to the sender",
       "defaultReplyAll": "Reply All",
       "defaultReplyAllDesc": "The Reply button sends to all recipients",
+      "defaultSender": "Default sender",
+      "defaultSenderDesc": "Which address new messages are sent from when you compose outside a specific account, such as from the unified inbox. Replies always use the account that received the message.",
+      "defaultSenderLastUsed": "Last used account",
       "markReadBehavior": "Mark as read",
       "markReadImmediate": "Immediately",
       "markReadImmediateDesc": "Mark emails as read as soon as you open them.",
@@ -1266,6 +1316,8 @@
       "adminGroupValue": "Admin group value",
       "adminGroupValuePh": "mailflow-admins",
       "adminGroupValueDesc": "The group name that grants admin access. Users in this group become admins on every SSO login; users not in this group lose admin access.",
+      "loginMatchClaim": "Match existing accounts by",
+      "loginMatchClaimDesc": "OIDC claim matched against each MailFlow account’s username when an SSO login is first linked to an existing account (provisioning mode “login existing only”). Defaults to email. Use preferred_username, upn, etc. for identity providers where usernames are not email addresses — only if your provider guarantees the claim is unique and not user-editable.",
       "save": "Save",
       "editButton": "Edit",
       "deleteButton": "Delete",
@@ -1324,6 +1376,32 @@
         "deviceCodeDeclined": "Authorization was declined.",
         "deviceCodeError": "An error occurred. Please try again.",
         "deviceCodeCancel": "Cancel"
+      },
+      "google": {
+        "title": "Gmail / Google Workspace",
+        "description": "OAuth2 for Gmail and Google Workspace mailboxes — required when an admin has disabled app passwords",
+        "configured": "Configured",
+        "notConfigured": "Not configured",
+        "redirecting": "Redirecting…",
+        "connect": "Connect Google account",
+        "setupTitle": "Google Cloud OAuth client setup",
+        "step1": "Go to console.cloud.google.com and select (or create) a project. For a Workspace domain, sign in with an account in that domain so the project belongs to the organisation",
+        "step2": "APIs & Services → Library → enable the Gmail API",
+        "step3": "OAuth consent screen → set User Type, then add the scope https://mail.google.com/",
+        "step4": "Credentials → Create credentials → OAuth client ID → Web application, and add the redirect URI shown below",
+        "scopeNote": "https://mail.google.com/ is a restricted scope. Choose User Type \"Internal\" if the project belongs to a Workspace organisation: no verification is needed and refresh tokens do not expire. \"External\" in Testing mode works immediately but Google revokes refresh tokens after 7 days, so accounts must be reconnected weekly.",
+        "clientId": "Client ID",
+        "clientIdPh": "xxxxxxxx.apps.googleusercontent.com",
+        "clientSecret": "Client Secret",
+        "clientSecretPh": "GOCSPX-…",
+        "redirectUri": "Redirect URI",
+        "redirectUriNote": "This must exactly match an authorized redirect URI on the OAuth client. Suggested: {{uri}}",
+        "save": "Save configuration",
+        "savedNote": "Configuration saved. Click \"Connect Google account\" to authorize.",
+        "connectedNote": "Google account connected successfully! Check the Accounts tab.",
+        "userNoteConfigured": "Your administrator has set up Google sign-in. Connect your Gmail or Google Workspace account below.",
+        "userNoteNotConfigured": "Google sign-in has not been set up by an administrator yet. Please ask your administrator to configure it.",
+        "remove": "Remove"
       },
       "todoist": {
         "title": "Todoist",
@@ -1433,7 +1511,68 @@
     "failHamTitle": "Could not mark as not spam",
     "failBody": "The mail server rejected the move.",
     "failHamBody": "The mail server rejected the move.",
-    "failBodyBulk": "{{count}} messages could not be moved."
+    "failBodyBulk": "{{count}} messages could not be moved.",
+    "title": "Antispam",
+    "subtitle": "Per-user machine-learning spam filter. Trained by your manual spam/ham feedback; new messages are classified automatically when enabled per account.",
+    "saved": "Settings saved",
+    "resetAllDone": "Training data reset — {{n}} records deleted",
+    "retrainDone": "Retrain finished — {{n}} user(s) processed",
+    "retrainBusy": "A retrain is already running — it will finish on its own",
+    "statusTitle": "Model status",
+    "statusHelp": "The model is per-user and shared across your accounts. Below 50 training records only the built-in rules are used.",
+    "statMaturity": "Maturity",
+    "statRecords": "Training records",
+    "statVersion": "Model version",
+    "statLastTrained": "Last trained",
+    "statDecay": "Decay window",
+    "never": "never",
+    "days": "days",
+    "maturity": {
+      "mature": "Mature",
+      "fresh": "Fresh",
+      "insufficient": "Insufficient"
+    },
+    "masterEnable": "Enable antispam",
+    "masterEnableHelp": "Master switch for auto-classification. Each account also needs its own toggle.",
+    "perAccountHint": "Per-account toggle: Accounts → select an account → Antispam section.",
+    "thresholdsTitle": "Thresholds",
+    "thresholdsHelp": "Higher values = fewer false positives but more spam gets through.",
+    "spamThreshold": "Spam threshold",
+    "autoMoveThreshold": "Auto-move threshold",
+    "save": "Save",
+    "decayTitle": "Training decay",
+    "decayHelp": "Older training data is down-weighted with this half-life (7–365 days).",
+    "dangerTitle": "Danger zone",
+    "retrainNow": "Retrain now",
+    "resetConfirmWarn": "This is irreversible: all your training data will be deleted.",
+    "resetConfirmYes": "Yes, delete training data",
+    "resetAll": "Reset all training data",
+    "deletionsTitle": "Recent deletions",
+    "deleteScope": {
+      "per_account": "One account",
+      "all": "All accounts"
+    },
+    "records": "records",
+    "howItWorks": "How it works: your manual Mark as spam / Not spam choices train the model. Auto-classified messages never re-train it. Rules are always on; the ML model joins once you have 50+ training records.",
+    "badgeLabel": "SPAM INDEX",
+    "badgeTitle": "Auto-classified as spam — click for details",
+    "explainTitle": "Why was this marked as spam?",
+    "explainVerdict": "Verdict",
+    "explainMethod": "Method",
+    "explainConfidence": "Confidence",
+    "verdict": {
+      "spam": "Spam",
+      "ham": "Ham",
+      "unsure": "Uncertain"
+    },
+    "method": {
+      "rules": "Rules",
+      "blended": "Rules + ML"
+    },
+    "rulesFiredTitle": "Rules that fired",
+    "noRulesFired": "No rules fired",
+    "mlTokensTitle": "Top contributing tokens",
+    "noMlTokens": "No ML tokens"
   },
   "contacts": {
     "title": "Contacts",
@@ -1475,7 +1614,6 @@
     "carddavBadge": "Synced from CardDAV"
   },
   "todoist": {
-    "betaLabel": "Beta",
     "title": "Create Todoist Task",
     "taskTitle": "Task title",
     "taskTitlePh": "What needs to be done?",
@@ -1514,6 +1652,7 @@
     "removeFrom": "Remove from {{state}}",
     "classified": "Label applied",
     "classifyFailed": "Couldn't apply label",
+    "undoFailed": "Couldn't undo label",
     "removed": "Label removed",
     "removeFailed": "Couldn't remove label",
     "done": "Mark done",
@@ -1530,5 +1669,18 @@
   "window": {
     "minimize": "Minimize",
     "close": "Close"
+  },
+  "diagnostics": {
+    "section": "Diagnostics",
+    "blurb": "A sanitized report you can share to help troubleshoot. It contains no email addresses, names, message content, or secrets.",
+    "generateReport": "Generate diagnostics report",
+    "title": "Diagnostics report",
+    "includes": "Includes: app versions, your environment, per-account and folder counts, sync error categories, and server health. Account IDs and custom folder names are replaced by one-time hashes.",
+    "excludes": "Excludes: email addresses, names, subjects, message content, passwords, and API keys or tokens.",
+    "download": "Download JSON",
+    "copied": "Report copied",
+    "copyFailed": "Copy failed",
+    "generating": "Generating report…",
+    "error": "Could not generate the report."
   }
 }

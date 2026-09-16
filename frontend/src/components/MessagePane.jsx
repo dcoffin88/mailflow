@@ -9,10 +9,18 @@ import { useMobile } from '../hooks/useMobile.js';
 import { clearDeleteGuard, clearPendingDelete, setCompletedDelete, setPendingDelete } from '../utils/pendingDeletes.js';
 import { pendingMarkReadMap, completedMarkReadMap, setPending } from '../utils/pendingReads.js';
 import DOMPurify from 'dompurify';
-import { BUILTIN_SUMMARIZE } from '../aiActions.js';
+import { BUILTIN_SUMMARIZE, summarizePromptForLocale } from '../aiActions.js';
 import { getResults, saveResult, removeResult } from '../aiResults.js';
+import { aiRuns } from '../utils/aiRunRegistry.js';
 import { renderMarkdown } from '../utils/renderMarkdown.js';
 import { pickReplyAlias } from '../utils/replyAlias.js';
+import { measureContentHeight, createHeightController, forceEagerImages } from '../utils/emailFrameHeight.js';
+import { copyToClipboard } from '../utils/clipboard.js';
+import { folderMatchesQuery } from '../utils/folderDisplay.js';
+import FolderPathLabel from './FolderPathLabel.jsx';
+import SpamBadge from './SpamBadge.jsx';
+import SpamExplainModal from './SpamExplainModal.jsx';
+import { classifyAttachmentRisk } from '../utils/attachmentRisk.js';
 const USE_DIV_RENDER = import.meta.env.VITE_EMAIL_DIV_RENDER === 'true';
 const MESSAGE_OPENING_EVENT = 'mailflow:message-opening';
 
@@ -91,7 +99,7 @@ function fileIcon(type) {
 }
 
 export default function MessagePane({ windowMessageId = null, onWindowClose = null } = {}) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     messages, searchResults, searchQuery, selectedMessageId: globalSelectedId, setSelectedMessage,
     updateMessage, removeMessage, decrementUnread, incrementUnread, openCompose, accounts, addNotification,
@@ -202,9 +210,11 @@ export default function MessagePane({ windowMessageId = null, onWindowClose = nu
   }, [selectedMessageId]);
 
   useEffect(() => {
-    // Abort any actions still streaming for the previous message.
-    Object.values(aiAbortRefs.current).forEach(c => c?.abort());
-    aiAbortRefs.current = {};
+    // Deliberately does NOT abort in-flight actions. They persist their own result against the
+    // message they were started from, so leaving a message lets the work finish instead of
+    // discarding it (#428). Only dismissal, re-running the same action, and an identity change
+    // (logout, account switch, lock) cancel a run. Unmount deliberately does not.
+    viewingMsgIdRef.current = selectedMessageId;
     setShowAiMenu(false);
     // Restore persisted results (#204) so they reappear instead of vanishing.
     const saved = getResults(selectedMessageId);
@@ -305,6 +315,7 @@ export default function MessagePane({ windowMessageId = null, onWindowClose = nu
   const [moveSearch, setMoveSearch] = useState('');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [contextMenu, setContextMenu] = useState(null);
+  const [spamExplainMessageId, setSpamExplainMessageId] = useState(null);
   const [findDialogOpen, setFindDialogOpen] = useState(false);
   const [findQuery, setFindQuery] = useState('');
   const [findMatchCase, setFindMatchCase] = useState(false);
@@ -321,8 +332,12 @@ export default function MessagePane({ windowMessageId = null, onWindowClose = nu
   const moveBtnRef = useRef(null);
   const moreMenuRef = useRef(null);
   const aiMenuRef = useRef(null);
-  // One AbortController per in-flight action, keyed by action key.
-  const aiAbortRefs = useRef({});
+  // In-flight AI actions live in a module-level registry, keyed by message AND action, so they
+  // outlive this component. Navigating, closing a pop-out and changing layout all deliberately
+  // leave them running: the result is saved against the message it was started from, so letting
+  // the request finish is what puts it there when you return (#428). utils/aiRunRegistry.js.
+  // The message currently on screen, read inside async callbacks that outlive a navigation.
+  const viewingMsgIdRef = useRef(selectedMessageId);
   const scrollContainerRef = useRef(null);
   const iframeRef = useRef(null);
   const roRef = useRef(null);
@@ -538,35 +553,74 @@ export default function MessagePane({ windowMessageId = null, onWindowClose = nu
     if (!iframe || !body?.html) return;
 
     let rafId;
-    let lastH = 0;
+    let pollId = null;
+    const heights = createHeightController();
+    let initialisedDoc = null;
     let contextMenuDoc = null;
     let iframeContextMenuHandler = null;
+    let clickDoc = null;
+    let iframeClickHandler = null;
 
     const setHeight = () => {
       const doc = iframe.contentDocument;
       if (!doc) return;
-      const el = doc.documentElement;
-      const b  = doc.body;
-      const h  = Math.max(
-        el ? el.scrollHeight : 0,
-        el ? el.offsetHeight : 0,
-        b  ? b.scrollHeight  : 0,
-        b  ? b.offsetHeight  : 0,
-      );
+      const b = doc.body;
+      const wrapper = doc.getElementById('mf-scale-wrapper');
+      // documentElement is deliberately NOT measured: its scrollHeight is floored by
+      // the frame's own viewport, so once the frame is N tall every reading is >= N
+      // and an over-estimate can never be walked back. That floor, not the guard that
+      // used to sit below it, is what left whitespace under short emails.
+      const h = measureContentHeight({
+        wrapperOffsetHeight: wrapper ? wrapper.offsetHeight : 0,
+        wrapperOffsetTop:    wrapper ? wrapper.offsetTop    : 0,
+        bodyScrollHeight:    b ? b.scrollHeight : 0,
+        bodyOffsetHeight:    b ? b.offsetHeight : 0,
+      });
       // Scale visual height to match the proportional scale applied to the
       // email wrapper (1 for normal emails, <1 for wide fixed-layout emails).
-      const scaled = Math.round(h * emailScaleRef.current);
-      if (scaled > lastH) {
-        lastH = scaled;
-        iframe.style.height = scaled + 'px';
-      }
+      // offsetHeight above is untransformed, so the factor applies exactly once.
+      const next = heights.next(h, emailScaleRef.current);
+      if (next !== null) iframe.style.height = next + 'px';
     };
 
     const onLoaded = () => {
+      const doc = iframe.contentDocument;
+      // Only ever initialise against OUR document. A freshly mounted frame exposes an
+      // about:blank whose readyState is already 'complete', and a frame whose srcDoc has
+      // just changed still exposes the PREVIOUS email until the swap lands. Either way the
+      // readyState fast path further down can fire against a document that is not this
+      // email, measuring it and binding a ResizeObserver to it. #mf-scale-wrapper is only
+      // present in a document we rendered, which makes it a reliable marker.
+      if (!doc || !doc.getElementById('mf-scale-wrapper')) return;
+      // Guard the fast path against re-running on a document already wired up. This is
+      // per effect run, so a genuine re-run (changed deps) still re-attaches everything
+      // the cleanup tore down.
+      if (doc === initialisedDoc) return;
+      initialisedDoc = doc;
+
       emailScaleRef.current = 1; // reset for each new email
 
-      const doc = iframe.contentDocument;
-      if (!doc) return;
+      // Start every image fetching now, rather than letting the browser defer them.
+      //
+      // Lazy loading is gated on the scroll viewport, and for an iframe that viewport is
+      // the frame's own box, which starts at 300px. Images below that never fetch, so they
+      // measure as zero height, so the frame is sized short, which brings the next image
+      // into range, which fetches, which grows the content, which resizes the frame again.
+      // Every step of that staircase costs a network round trip, and a marketing email with
+      // nine stacked images renders in visible instalments. Looking at it mid-staircase is
+      // the "half loaded" email; it only appears fixed on a second visit because the images
+      // are cached by then.
+      //
+      // Nothing is lost by loading eagerly: the frame has no internal scrolling and is
+      // sized to its full content, so every image ends up on screen regardless.
+      //
+      // Done against the DOM rather than by rewriting the srcDoc HTML so there is no chance
+      // of matching the attribute inside text content. Flipping here, before the load
+      // handlers further down are attached, is safe because everything between is
+      // synchronous: a fetch cannot deliver its load event until this function yields, by
+      // which point the handlers exist. The ResizeObserver on the body is the backstop
+      // regardless.
+      forceEagerImages(doc);
 
       // Some marketing emails have inline styles on their <body> tag (e.g. overflow:auto,
       // height:100%) that the HTML parser merges into the iframe's outer <body>.  Our
@@ -655,7 +709,11 @@ export default function MessagePane({ windowMessageId = null, onWindowClose = nu
       };
       expandScrollContainers();
 
-      lastH = 0; // recalculate from scratch with the new scale
+      // Recalculate from scratch with the new scale. The controller deliberately does
+      // not seed itself from the frame's current height, so this measurement is
+      // authoritative even when it is SHORTER than what is currently applied. That is
+      // what clears leftover whitespace when the previous email was taller.
+      heights.reset();
       setHeight();
       rafId = requestAnimationFrame(setHeight);
 
@@ -664,7 +722,13 @@ export default function MessagePane({ windowMessageId = null, onWindowClose = nu
       // origin via allow-same-origin and open a new mailflow tab instead of
       // the intended destination.  We read the raw attribute to bypass
       // browser resolution and only forward absolute http(s)/mailto links.
-      doc.addEventListener('click', (ev) => {
+      // Tracked and removed like the contextmenu handler below — onLoaded can
+      // re-run on the same document when the effect's callback deps change,
+      // and an untracked listener stacks up, opening N duplicate tabs per click.
+      if (clickDoc && iframeClickHandler) {
+        clickDoc.removeEventListener('click', iframeClickHandler);
+      }
+      iframeClickHandler = (ev) => {
         const anchor = ev.target.closest('a[href]');
         if (!anchor) return;
         ev.preventDefault();
@@ -675,8 +739,13 @@ export default function MessagePane({ windowMessageId = null, onWindowClose = nu
         } else if (/^mailto:/i.test(raw)) {
           window.open(raw, '_blank', 'noopener,noreferrer');
         }
-      });
+      };
+      clickDoc = doc;
+      doc.addEventListener('click', iframeClickHandler);
 
+      if (contextMenuDoc && iframeContextMenuHandler) {
+        contextMenuDoc.removeEventListener('contextmenu', iframeContextMenuHandler);
+      }
       iframeContextMenuHandler = (ev) => {
         if (hasNativeContextTarget(ev, doc)) return;
         ev.preventDefault();
@@ -699,25 +768,59 @@ export default function MessagePane({ windowMessageId = null, onWindowClose = nu
       });
 
       // Watch for content that reflows after load (web fonts, dynamic content).
-      // Guard: only grow — never shrink on observer fires — so any residual loop
-      // stalls immediately once height stabilises.
+      // Shrinking is allowed here: content height cannot depend on frame height,
+      // because html/body are pinned to height:auto above and media queries key off
+      // width. createHeightController still carries a tolerance band plus an
+      // oscillation freeze in case some email defeats that reasoning.
       const root = doc.body || doc.documentElement;
       if (window.ResizeObserver && root) {
+        // Disconnect first: onLoaded can legitimately run more than once per effect
+        // (stale document, then the real one), and overwriting the ref without this
+        // leaves the previous observer running against the old document forever.
+        if (roRef.current) roRef.current.disconnect();
         roRef.current = new ResizeObserver(() => requestAnimationFrame(setHeight));
         roRef.current.observe(root);
       }
     };
 
-    iframe.addEventListener('load', onLoaded, { once: true });
-    if (iframe.contentDocument?.readyState === 'complete') {
+    // 'load' is kept, but it CANNOT be the only trigger. It waits for every subresource,
+    // so a single image that never settles (a dead tracking pixel, a blocked host, a host
+    // that accepts the connection and never answers) leaves the document parked at
+    // readyState 'interactive' forever. load never fires, none of the setup above ever
+    // runs, and the frame sits at its initial 300px with the email clipped inside it. One
+    // unreachable image was enough to break rendering of the whole message.
+    //
+    // Not { once: true } either: a frame fires 'load' for the about:blank it starts life
+    // with, and a once-listener is spent on that even though onLoaded correctly declines
+    // to initialise against a document that is not ours.
+    iframe.addEventListener('load', onLoaded);
+
+    // Everything onLoaded does needs only a parsed DOM, never a finished one, so drive it
+    // from the parsed state and let the image handlers and the ResizeObserver grow the
+    // frame as pictures arrive. Polling by frame rather than listening for
+    // DOMContentLoaded because the document to listen on does not exist yet at this point:
+    // the frame is still showing about:blank and swaps in the real one later. onLoaded is
+    // idempotent per document, so the repeated calls are free and stop as soon as one
+    // succeeds.
+    let pollFrames = 0;
+    const MAX_POLL_FRAMES = 300; // ~5s at 60fps; srcDoc parses far sooner
+    const pollUntilParsed = () => {
+      pollId = null;
       onLoaded();
-    }
+      if (initialisedDoc || pollFrames++ >= MAX_POLL_FRAMES) return;
+      pollId = requestAnimationFrame(pollUntilParsed);
+    };
+    pollUntilParsed();
 
     return () => {
       cancelAnimationFrame(rafId);
+      if (pollId) cancelAnimationFrame(pollId);
       if (roRef.current) { roRef.current.disconnect(); roRef.current = null; }
       if (contextMenuDoc && iframeContextMenuHandler) {
         contextMenuDoc.removeEventListener('contextmenu', iframeContextMenuHandler);
+      }
+      if (clickDoc && iframeClickHandler) {
+        clickDoc.removeEventListener('click', iframeClickHandler);
       }
       iframe.removeEventListener('load', onLoaded);
       emailScaleRef.current = 1;
@@ -1164,33 +1267,39 @@ ${bodyContent}
     if (!textContent) return;
 
     const label = aiActionLabel(key, action.label);
-    aiAbortRefs.current[key]?.abort();
-    const ctrl = new AbortController();
-    aiAbortRefs.current[key] = ctrl;
     const msgId = selectedMessageId;
-    setAiResults(r => ({ ...r, [key]: { status: 'loading', text: '', label } }));
+    const ctrl = aiRuns.start(msgId, key, new AbortController());
+    // Only paint into the pane while the message this run belongs to is the one on screen.
+    // A run that outlives a navigation still saves; the restore on return shows it.
+    const applyIfViewing = (updater) => { if (viewingMsgIdRef.current === msgId) setAiResults(updater); };
+    applyIfViewing(r => ({ ...r, [key]: { status: 'loading', text: '', label } }));
+    // The built-in Summarize prompt is uneditable, so steer its output to the
+    // user's UI language (#255). Custom actions keep their author's prompt as-is.
+    const promptText = action.builtin ? summarizePromptForLocale(i18n.language) : action.prompt;
     try {
       const fullText = await api.ai.chat([{
         role: 'user',
-        content: `${action.prompt}\n\n${textContent.slice(0, 6000)}`,
+        content: `${promptText}\n\n${textContent.slice(0, 6000)}`,
       }], {
         signal: ctrl.signal,
         onDelta: (text) => {
-          setAiResults(r => ({ ...r, [key]: { status: 'loading', text, label } }));
+          applyIfViewing(r => ({ ...r, [key]: { status: 'loading', text, label } }));
         },
       });
-      setAiResults(r => ({ ...r, [key]: { status: 'done', text: fullText, label } }));
-      // Persist only completed results, keyed to the message it ran against.
+      applyIfViewing(r => ({ ...r, [key]: { status: 'done', text: fullText, label } }));
+      // Persist unconditionally: this is the whole point when the user has navigated away.
       if (fullText) saveResult(msgId, key, fullText, label);
     } catch (err) {
       if (err.name === 'AbortError') return;
-      setAiResults(r => ({ ...r, [key]: { status: 'error', text: err.message, label } }));
+      applyIfViewing(r => ({ ...r, [key]: { status: 'error', text: err.message, label } }));
+    } finally {
+      aiRuns.finish(msgId, key);
     }
   };
 
   // Dismiss a pinned result box and drop its cached copy.
   const dismissAiResult = (key) => {
-    aiAbortRefs.current[key]?.abort();
+    aiRuns.abort(selectedMessageId, key);
     removeResult(selectedMessageId, key);
     setAiResults(r => { const next = { ...r }; delete next[key]; return next; });
   };
@@ -1249,8 +1358,15 @@ ${bodyContent}
 
   useEffect(() => {
     api.ai.status().then(setAiStatus).catch(() => {});
-    return () => { Object.values(aiAbortRefs.current).forEach(c => c?.abort()); };
+    // No abort on unmount: the pane also unmounts when a pop-out closes or the layout changes,
+    // and a run the user is still waiting for must survive that. Identity changes cancel runs
+    // instead, from the store, where logout and account switch are actually known about.
   }, []);
+
+  // riskArmed: a risky attachment needs a second click to download; the first
+  // arms the button and shows why.
+  const [riskArmed, setRiskArmed] = useState(null);
+  useEffect(() => { setRiskArmed(null); }, [selectedMessageId]);
 
   const handleDownload = async (messageId, part, filename) => {
     setDownloadingPart(part);
@@ -1599,7 +1715,7 @@ ${bodyContent}
       case 'copy':
       case 'copySelection': {
         const text = getPaneSelectionText();
-        if (text) navigator.clipboard?.writeText(text).catch(() => {});
+        if (text) copyToClipboard(text);
         break;
       }
       case 'selectAllContent': {
@@ -2043,7 +2159,7 @@ ${bodyContent}
                     const q = moveSearch.trim().toLowerCase();
                     if (q) {
                       const filtered = movePickerFolders
-                        .filter(f => f.path !== message.folder && f.name.toLowerCase().includes(q));
+                        .filter(f => f.path !== message.folder && folderMatchesQuery(f, q));
                       return filtered.length === 0 ? (
                         <div style={{ padding: '12px 12px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 12 }}>
                           {t('contextMenu.folders.empty')}
@@ -2057,7 +2173,7 @@ ${bodyContent}
                           onMouseLeave={e => e.currentTarget.style.background = 'none'}
                         >
                           <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}><FolderIcon specialUse={f.special_use} /></span>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                          <FolderPathLabel folder={f} />
                         </button>
                       ));
                     }
@@ -2077,7 +2193,7 @@ ${bodyContent}
                                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
                               >
                                 <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}><FolderIcon specialUse={f.special_use} /></span>
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                                <FolderPathLabel folder={f} />
                               </button>
                             ))}
                             <div style={{ height: 1, background: 'var(--border-subtle)', margin: '3px 0' }} />
@@ -2097,7 +2213,7 @@ ${bodyContent}
                                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
                               >
                                 <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}><FolderIcon specialUse={f.special_use} /></span>
-                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                                <FolderPathLabel folder={f} />
                               </button>
                             ))}
                             <div style={{ height: 1, background: 'var(--border-subtle)', margin: '3px 0' }} />
@@ -2114,7 +2230,7 @@ ${bodyContent}
                               onMouseLeave={e => e.currentTarget.style.background = 'none'}
                             >
                               <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}><FolderIcon specialUse={f.special_use} /></span>
-                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                              <FolderPathLabel folder={f} />
                             </button>
                           ))
                         }
@@ -2379,12 +2495,17 @@ ${bodyContent}
             color: 'var(--text-primary)', lineHeight: 1.3,
             fontFamily: 'var(--font-display)',
           }}>
-            {(() => {
-              const paneSubject = resolvedSubject || message.subject;
-              return (paneSubject && paneSubject !== '(no subject)')
-                ? paneSubject
-                : t('message.noSubject');
-            })()}
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+              <span>
+                {(() => {
+                  const paneSubject = resolvedSubject || message.subject;
+                  return (paneSubject && paneSubject !== '(no subject)')
+                    ? paneSubject
+                    : t('message.noSubject');
+                })()}
+              </span>
+              <SpamBadge message={message} onClick={(m) => setSpamExplainMessageId(m.id)} />
+            </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 16px' }}>
@@ -2413,6 +2534,12 @@ ${bodyContent}
                   {message.from_name && (
                     <div style={{ fontSize: 12, color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {message.from_email}
+                    </div>
+                  )}
+                  {body?.senderEmail && (
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span>{t('message.via')} </span>
+                      <span style={{ color: 'var(--text-secondary)' }}>{body.senderName ? `${body.senderName} <${body.senderEmail}>` : body.senderEmail}</span>
                     </div>
                   )}
                   <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -2448,6 +2575,12 @@ ${bodyContent}
                       </span>
                     )}
                   </div>
+                  {body?.senderEmail && (
+                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 3 }}>
+                      <span>{t('message.via')} </span>
+                      <span style={{ color: 'var(--text-secondary)' }}>{body.senderName ? `${body.senderName} <${body.senderEmail}>` : body.senderEmail}</span>
+                    </div>
+                  )}
                   <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 3 }}>
                     <span>{t('message.to')} </span>
                     <span style={{ color: 'var(--text-secondary)' }}>
@@ -2524,16 +2657,25 @@ ${bodyContent}
               )}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {attachments.map((att, i) => (
+              {attachments.map((att, i) => {
+                const risk = classifyAttachmentRisk(att.filename, att.type);
+                const risky = risk.level === 'block' || risk.level === 'warn';
+                const riskColor = risk.level === 'block' ? 'var(--red)' : risk.level === 'warn' ? 'var(--amber)' : 'var(--text-tertiary)';
+                const armed = riskArmed === att.part;
+                return (
                 <button
                   key={i}
-                  onClick={() => handleDownload(message.id, att.part, att.filename)}
+                  onClick={() => {
+                    if (risky && !armed) { setRiskArmed(att.part); return; }
+                    setRiskArmed(null);
+                    handleDownload(message.id, att.part, att.filename);
+                  }}
                   disabled={downloadingPart === att.part}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8,
                     padding: '8px 12px', borderRadius: 8,
                     background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border)',
+                    border: `1px solid ${risky ? riskColor : 'var(--border)'}`,
                     cursor: downloadingPart === att.part ? 'wait' : 'pointer',
                     color: 'var(--text-primary)',
                     transition: 'background 0.1s',
@@ -2553,6 +2695,14 @@ ${bodyContent}
                     <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                       {downloadingPart === att.part ? t('message.downloading') : formatBytes(att.size)}
                     </div>
+                    {risk.level !== 'ok' && (
+                      <div style={{ fontSize: 11, color: riskColor, fontWeight: risk.level === 'block' ? 600 : 400, whiteSpace: 'normal' }}>
+                        {risk.doubleExt
+                          ? t('message.attachmentRisk.doubleExt', { ext: risk.doubleExt })
+                          : t(`message.attachmentRisk.${risk.level}`, { ext: risk.ext })}
+                        {armed && ` — ${t('message.attachmentRisk.confirm')}`}
+                      </div>
+                    )}
                   </div>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
                     stroke="var(--text-tertiary)" strokeWidth="2" style={{ flexShrink: 0 }}>
@@ -2561,7 +2711,8 @@ ${bodyContent}
                     <line x1="12" y1="15" x2="12" y2="3"/>
                   </svg>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -2958,7 +3109,7 @@ ${bodyContent}
                 const q = moveSearch.trim().toLowerCase();
                 if (q) {
                   const filtered = movePickerFolders
-                    .filter(f => f.path !== message.folder && f.name.toLowerCase().includes(q));
+                    .filter(f => f.path !== message.folder && folderMatchesQuery(f, q));
                   return filtered.length === 0 ? (
                     <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 13 }}>
                       {t('contextMenu.folders.empty')}
@@ -2970,7 +3121,7 @@ ${bodyContent}
                       style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%', minHeight: 48, padding: '0 20px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 15, cursor: 'pointer', textAlign: 'left' }}
                     >
                       <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}><FolderIcon specialUse={f.special_use} size={18} /></span>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                      <FolderPathLabel folder={f} />
                     </button>
                   ));
                 }
@@ -2988,7 +3139,7 @@ ${bodyContent}
                             style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%', minHeight: 48, padding: '0 20px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 15, cursor: 'pointer', textAlign: 'left' }}
                           >
                             <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}><FolderIcon specialUse={f.special_use} size={18} /></span>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                            <FolderPathLabel folder={f} />
                           </button>
                         ))}
                         <div style={{ height: 1, background: 'var(--border-subtle)', margin: '3px 0' }} />
@@ -3006,7 +3157,7 @@ ${bodyContent}
                             style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%', minHeight: 48, padding: '0 20px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 15, cursor: 'pointer', textAlign: 'left' }}
                           >
                             <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}><FolderIcon specialUse={f.special_use} size={18} /></span>
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                            <FolderPathLabel folder={f} />
                           </button>
                         ))}
                         <div style={{ height: 1, background: 'var(--border-subtle)', margin: '3px 0' }} />
@@ -3021,7 +3172,7 @@ ${bodyContent}
                           style={{ display: 'flex', alignItems: 'center', gap: 14, width: '100%', minHeight: 48, padding: '0 20px', background: 'none', border: 'none', borderBottom: '1px solid var(--border-subtle)', color: 'var(--text-primary)', fontSize: 15, cursor: 'pointer', textAlign: 'left' }}
                         >
                           <span style={{ color: 'var(--text-tertiary)', flexShrink: 0 }}><FolderIcon specialUse={f.special_use} size={18} /></span>
-                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                          <FolderPathLabel folder={f} />
                         </button>
                       ))
                     }
@@ -3164,6 +3315,13 @@ ${bodyContent}
         />
       )}
 
+      {spamExplainMessageId && (
+        <SpamExplainModal
+          messageId={spamExplainMessageId}
+          onClose={() => setSpamExplainMessageId(null)}
+        />
+      )}
+
       {showTodoistModal && (
         <TodoistTaskModal
           message={message}
@@ -3230,11 +3388,16 @@ function AiResultBox({ result, canRegen, onRegen, onDismiss }) {
           'text/plain': new Blob([source], { type: 'text/plain' }),
         })]);
       } else {
-        await navigator.clipboard.writeText(source);
+        const { ok } = await copyToClipboard(source);
+        if (!ok) return;
       }
       flash();
     } catch {
-      try { await navigator.clipboard.writeText(source); flash(); } catch { /* clipboard unavailable */ }
+      // The rich path can fail on its own (no ClipboardItem, a rejected write). Fall back
+      // to plain text through the shared helper, which also covers non-secure contexts
+      // where navigator.clipboard does not exist at all.
+      const { ok } = await copyToClipboard(source);
+      if (ok) flash();
     }
   };
   const iconBtn = {

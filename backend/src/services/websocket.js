@@ -1,3 +1,5 @@
+import { recordWsConnect, recordWsDisconnect } from './diagnosticsRing.js';
+
 // Derive the expected origin from APP_URL once at startup.
 // If APP_URL is not set, origin validation is skipped — log a warning so operators know.
 const ALLOWED_ORIGIN = (() => {
@@ -13,6 +15,11 @@ if (!ALLOWED_ORIGIN) {
 
 export function setupWebSocket(wss, sessionMiddleware, imapManager) {
   wss.on('connection', (ws, req) => {
+    // Transport errors can arrive during session lookup, before authentication.
+    ws.on('error', err => {
+      console.warn('WebSocket transport error:', err.message);
+      ws.terminate();
+    });
     // Reject cross-origin WebSocket connections when APP_URL is configured.
     // Browsers always send Origin on WS upgrades; absence means a non-browser client.
     const origin = req.headers.origin;
@@ -33,7 +40,14 @@ export function setupWebSocket(wss, sessionMiddleware, imapManager) {
       end: () => {}
     };
 
-    sessionMiddleware(req, fakeRes, () => {
+    sessionMiddleware(req, fakeRes, (err) => {
+      if (ws.readyState !== 1) return;
+      if (err) {
+        // A temporary session-store outage should be retried, not treated as
+        // invalid credentials (1008 disables automatic browser reconnects).
+        ws.close(1011, 'Session unavailable');
+        return;
+      }
       const userId = req.session?.userId;
       if (!userId) {
         ws.close(1008, 'Unauthorized');
@@ -46,10 +60,14 @@ export function setupWebSocket(wss, sessionMiddleware, imapManager) {
         return;
       }
       ws.userId = userId;
+      recordWsConnect();
+      ws._diagCounted = true;
       console.log(`WebSocket connected for user ${userId}`);
       ws.send(JSON.stringify({ type: 'connected' }));
       // Re-establish IMAP connections if the server restarted (skips already-connected accounts)
-      imapManager.connectAllForUser(userId);
+      imapManager.connectAllForUser(userId).catch(err => {
+        console.error('WebSocket account reconnect failed:', err.message);
+      });
     });
 
     ws.on('message', async (data) => {
@@ -60,6 +78,7 @@ export function setupWebSocket(wss, sessionMiddleware, imapManager) {
     });
 
     ws.on('close', () => {
+      if (ws._diagCounted) recordWsDisconnect();
       console.log(`WebSocket disconnected`);
     });
   });
