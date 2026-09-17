@@ -838,7 +838,7 @@ async function verifyExpectedDigest(filePath) {
 
 function readWindowsSignature(filePath) {
   const script = [
-    '$signature = Get-AuthenticodeSignature -LiteralPath $args[0]',
+    '$signature = Get-AuthenticodeSignature -LiteralPath $env:MAILFLOW_SIGNATURE_PATH',
     '[pscustomobject]@{',
     '  status = [string]$signature.Status',
     '  subject = [string]$signature.SignerCertificate.Subject',
@@ -850,10 +850,13 @@ function readWindowsSignature(filePath) {
     '-NonInteractive',
     '-Command',
     script,
-    filePath,
   ], {
     encoding: 'utf8',
     windowsHide: true,
+    env: {
+      ...process.env,
+      MAILFLOW_SIGNATURE_PATH: filePath,
+    },
   });
   return JSON.parse(output);
 }
@@ -934,6 +937,7 @@ function canAutoInstallUpdates() {
 
     return true;
   } catch {
+    console.error('Could not determine whether this install supports automatic updates:', error);
     // Cannot read our own signature — treat as unsigned and link out rather than
     // download something we will not be able to verify.
     return false;
