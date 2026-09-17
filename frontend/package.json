@@ -74,6 +74,8 @@
     },
     "mac": {
       "artifactName": "${productName}-${version}-Universal.${ext}",
+      "identity": "-",
+      "hardenedRuntime": false,
       "target": [
         {
           "target": "dmg",
