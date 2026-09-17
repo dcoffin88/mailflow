@@ -2763,7 +2763,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml, 
           </div>
           {showMobileMore && (
             <div ref={mobileMoreRef} style={{ borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', padding: '2px 0', flexWrap: 'wrap' }}>
-              <button ref={typeMenuBtnRef} title="Typography" onMouseDown={openTypeMenu}
+              <button ref={typeMenuBtnRef} title={t('compose.toolbar.typography')} onMouseDown={openTypeMenu}
                 style={{ background: typeMenuPos ? 'var(--bg-hover)' : 'none', border: 'none', borderRadius: 4, padding: '6px 10px', cursor: 'pointer', display: 'inline-flex', flexDirection: 'row', alignItems: 'center', gap: 6, color: typeMenuPos ? 'var(--accent)' : 'var(--text-secondary)', WebkitTapHighlightColor: 'transparent' }}>
                 <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1 }}>A</span>
@@ -2810,7 +2810,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, htmlMode, onToggleHtml, 
 
         <Sep />
         
-        <button ref={typeMenuBtnRef} title="Typography" onMouseDown={openTypeMenu}
+        <button ref={typeMenuBtnRef} title={t('compose.toolbar.typography')} onMouseDown={openTypeMenu}
           style={{ background: typeMenuPos ? 'var(--bg-hover)' : 'none', border: 'none', borderRadius: 4, padding: '3px 6px', cursor: 'pointer', display: 'inline-flex', flexDirection: 'row', alignItems: 'center', gap: 1, color: typeMenuPos ? 'var(--accent)' : 'var(--text-secondary)' }}>
           <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1 }}>A</span>
