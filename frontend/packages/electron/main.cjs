@@ -47,6 +47,7 @@ let isQuitting = false;
 let updateInfo = null;
 let downloadedUpdate = null;
 let pendingUpdateDownloadUrl = null;
+let lastNotifiedManualUpdateVersion = null;
 let updateDownloadsInitialized = false;
 let nextNativeActionId = 1;
 
@@ -406,10 +407,10 @@ function sendUpdateStatus(payload) {
   mainWindow.webContents.send(UPDATE_STATUS_CHANNEL, payload);
 }
 
-function showInAppNotification({ title = '', message = '', type = 'info', actionLabel = '', action = '', persistent = false }) {
+function showInAppNotification({ title = '', message = '', type = 'info', actionLabel = '', action = '', actionUrl = '', persistent = false }) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
-  const payload = JSON.stringify({ title, message, type, actionLabel, action, persistent });
+  const payload = JSON.stringify({ title, message, type, actionLabel, action, actionUrl, persistent });
   mainWindow.webContents.executeJavaScript(`
     (() => {
       if (window.__mailflowNativeBridgeReady) return;
@@ -514,6 +515,8 @@ function showInAppNotification({ title = '', message = '', type = 'info', action
             window.mailflowNative?.updates?.installDownloaded?.();
           } else if (notification.action === 'copy-update-command-and-quit') {
             window.mailflowNative?.updates?.copyInstallCommandAndQuit?.();
+          } else if (notification.action === 'open-update-release' && notification.actionUrl) {
+            window.open(notification.actionUrl, '_blank');
           }
           dismiss();
         });
@@ -706,18 +709,39 @@ function notifyUpdateAvailable(verbose = true, { autoDownload = true } = {}) {
       releaseNotes: updateInfo.releaseNotes,
       releaseName: updateInfo.releaseName,
       releaseDate: updateInfo.releaseDate,
+      releaseUrl: updateInfo.releaseUrl,
       updateUrl: updateInfo.updateUrl,
       manual: true,
     },
   });
+  
+  if (!autoDownload) {
+    const releaseVersion = updateInfo?.releaseVersion;
+
+    // Background checks should notify only once for each new release.
+    // A user-requested "Check For Updates" should always show the result.
+    if (verbose || releaseVersion !== lastNotifiedManualUpdateVersion) {
+      showInAppNotification({
+        title: 'Update Available',
+        message: 'A new version of MailFlow is available.',
+        type: 'info',
+        actionLabel: 'View Release',
+        action: 'open-update-release',
+        actionUrl: updateInfo.releaseUrl,
+        persistent: true,
+      });
+
+      lastNotifiedManualUpdateVersion = releaseVersion;
+    }
+
+    return;
+  }
 
   if (!verbose) return;
 
   notifyUpdateStatus({
     title: 'Update Available',
-    message: autoDownload
-      ? 'MailFlow is downloading the newest version for you.'
-      : 'A new version of MailFlow is available to download.',
+    message: 'MailFlow is downloading the newest version for you.',
   });
 }
 
@@ -838,7 +862,7 @@ async function verifyExpectedDigest(filePath) {
 
 function readWindowsSignature(filePath) {
   const script = [
-    '$signature = Get-AuthenticodeSignature -LiteralPath $args[0]',
+    '$signature = Get-AuthenticodeSignature -LiteralPath $env:MAILFLOW_SIGNATURE_PATH',
     '[pscustomobject]@{',
     '  status = [string]$signature.Status',
     '  subject = [string]$signature.SignerCertificate.Subject',
@@ -850,10 +874,13 @@ function readWindowsSignature(filePath) {
     '-NonInteractive',
     '-Command',
     script,
-    filePath,
   ], {
     encoding: 'utf8',
     windowsHide: true,
+    env: {
+      ...process.env,
+      MAILFLOW_SIGNATURE_PATH: filePath,
+    },
   });
   return JSON.parse(output);
 }
@@ -933,7 +960,8 @@ function canAutoInstallUpdates() {
     }
 
     return true;
-  } catch {
+  } catch (error) {
+    console.error('Could not determine whether this install supports automatic updates:', error);
     // Cannot read our own signature — treat as unsigned and link out rather than
     // download something we will not be able to verify.
     return false;
@@ -1026,7 +1054,9 @@ async function checkForUpdates(verbose = false) {
       assetName: asset.name || '',
       releaseNotes: release.body || '',
       releaseName: release.name || release.tag_name,
+      releaseVersion: release.tag_name,
       releaseDate: release.published_at,
+      releaseUrl: release.html_url || null,
       updateUrl: asset.browser_download_url,
     };
 
