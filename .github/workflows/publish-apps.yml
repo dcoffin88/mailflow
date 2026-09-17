@@ -399,33 +399,13 @@ jobs:
           path: artifacts
 
       - name: Publish release files
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          VERSION: ${{ steps.app-version.outputs.version }}
-        run: |
-          set -euo pipefail
-
-          mapfile -d '' files < <(
-            find artifacts -type f \
-              \( -name '*.aab' \
-              -o -name '*.apk' \
-              -o -name '*.deb' \
-              -o -name '*.dmg' \
-              -o -name '*.exe' \
-              -o -name '*.rpm' \) \
-              -print0
-          )
-
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "::error::No release artifacts were downloaded."
-            exit 1
-          fi
-
-          printf 'Uploading %s release artifact(s):\n' "${#files[@]}"
-          printf ' - %s\n' "${files[@]}"
-
-          gh release upload "$VERSION" "${files[@]}" \
-            --repo "$GH_REPO" \
-            --clobber
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ steps.app-version.outputs.version }}
+          files: |
+            artifacts/**/*.aab
+            artifacts/**/*.apk
+            artifacts/**/*.deb
+            artifacts/**/*.dmg
+            artifacts/**/*.exe
+            artifacts/**/*.rpm
