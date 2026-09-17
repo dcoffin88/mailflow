@@ -52,6 +52,23 @@ jobs:
       matrix: ${{ steps.matrix.outputs.os }}
       android: ${{ steps.matrix.outputs.android }}
     steps:
+      - name: Verify release exists
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ github.event.release.tag_name || github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          
+          echo "Verifying GitHub release: $VERSION"
+          
+          if ! gh release view "$VERSION" --repo "$GH_REPO" >/dev/null; then
+            echo "::error::GitHub release '$VERSION' does not exist in '$GH_REPO'. Create/publish the release before running this workflow."
+            exit 1
+          fi
+          
+          echo "Release '$VERSION' exists."
       - id: matrix
         shell: bash
         env:
@@ -84,6 +101,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || github.event.inputs.version }}
 
       - uses: actions/setup-node@v6
         with:
@@ -262,6 +281,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || github.event.inputs.version }}
 
       - uses: actions/setup-node@v6
         with:
