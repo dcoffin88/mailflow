@@ -8,6 +8,7 @@ import { useMobile } from '../hooks/useMobile.js';
 import { isAccountInUnifiedInbox } from '../utils/unifiedInbox.js';
 import { shouldSyncFolder, folderSyncKey } from '../utils/folderSync.js';
 import { resolveThreadMessages } from '../utils/threadActions.js';
+import { unreadDeltaByAccount } from '../utils/countSnapshots.js';
 import { splitDraftSignature } from '../utils/draftSignature.js';
 import { useSwipeRow } from '../hooks/useSwipeRow.js';
 import ContextMenu from './ContextMenu.jsx';
@@ -879,6 +880,10 @@ export default function MessageList() {
     const actualDelta = read
       ? actionMessages.filter(msg => !msg.is_read).length
       : actionMessages.filter(msg => msg.is_read).length;
+    // And its split by account. With conversations on, a thread row can hold another
+    // account's copy of the same email (#476); that copy's unread belongs to THAT account's
+    // badge, while the estimate above had to charge the whole row to the row's own account.
+    const actualByAccount = unreadDeltaByAccount(actionMessages, read, message.account_id);
 
     // Now update the thread cache and correct the parent row if our estimate was off.
     if (isThreadRow) {
@@ -888,16 +893,22 @@ export default function MessageList() {
       }
     }
 
-    // Correct the sidebar badge if the estimate differed from the actual count.
+    // Correct the sidebar badges per account: each account's actual change, minus what the
+    // estimate already charged to it (all of it went to the row's own account, none elsewhere).
+    for (const accountId of new Set([message.account_id, ...actualByAccount.keys()])) {
+      const diff = (actualByAccount.get(accountId) || 0) - (accountId === message.account_id ? estimatedDelta : 0);
+      if (diff === 0) continue;
+      if (read) {
+        if (diff > 0) decrementUnread(accountId, diff);
+        else incrementUnread(accountId, -diff);
+      } else {
+        if (diff > 0) incrementUnread(accountId, diff);
+        else decrementUnread(accountId, -diff);
+      }
+    }
+    // Category counts are not per account, so the total delta still applies.
     if (actualDelta !== estimatedDelta) {
       const diff = actualDelta - estimatedDelta;
-      if (read) {
-        if (diff > 0) decrementUnread(message.account_id, diff);
-        else incrementUnread(message.account_id, -diff);
-      } else {
-        if (diff > 0) incrementUnread(message.account_id, diff);
-        else decrementUnread(message.account_id, -diff);
-      }
       adjustCategoryCount(message.category, read ? -diff : diff);
     }
 
@@ -927,13 +938,12 @@ export default function MessageList() {
       } else {
         updateMessage(message.id, { is_read: !read, unread_count: read ? 1 : 0 });
       }
-      if (read) {
-        if (actualDelta > 0) { incrementUnread(message.account_id, actualDelta); adjustCategoryCount(message.category, actualDelta); }
-        actionMessages.forEach(msg => pendingMarkReadMap.delete(msg.id));
-      } else if (actualDelta > 0) {
-        decrementUnread(message.account_id, actualDelta);
-        adjustCategoryCount(message.category, -actualDelta);
+      // Give each account back exactly what it was charged.
+      for (const [accountId, n] of actualByAccount) {
+        if (read) incrementUnread(accountId, n); else decrementUnread(accountId, n);
       }
+      if (actualDelta > 0) adjustCategoryCount(message.category, read ? actualDelta : -actualDelta);
+      if (read) actionMessages.forEach(msg => pendingMarkReadMap.delete(msg.id));
     }
   }, [
     resolveMessagesForThreadAction, isThreadListRow, updateMessage, setCachedThreadRead,
