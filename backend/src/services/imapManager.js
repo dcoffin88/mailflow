@@ -1470,7 +1470,14 @@ export async function acquirePooledClient(account) {
       // Released whether the connect succeeded or threw; a failed attempt must not leave a
       // phantom reservation that permanently shrinks the pool.
       pool.pending -= 1;
-      if (pool.pending === 0) drainWaiters(pool);
+      // Deliberately NOT waking a waiter to attempt its own grow here. drainWaiters only
+      // hands out a client that already exists, so after a failed grow there is nothing to
+      // hand out, and a review flagged the resulting wait as starvation. Letting waiters
+      // retry the grow would mean a fresh connect attempt per waiter against a provider that
+      // just refused us, which is the storm pattern #474 exists to stop. They instead wait
+      // out ACQUIRE_TIMEOUT_MS and fail with poolExhausted, which the caller surfaces as
+      // "account busy, try again" without adding load. A release or a successful grow
+      // elsewhere still wakes them through releasePooledClient.
     }
   }
 
@@ -2453,7 +2460,9 @@ export class ImapManager {
       // Surface only what we actually backed off on. Gated (unlike the connect paths, which
       // record any failure) because this catch also fires on ordinary slow ticks, and one
       // timed-out poll must not paint a working account red in the sidebar.
-      if (refused) await this._recordAccountError(account, detail);
+      // Auth failures are recorded too: they arm a cooldown measured in hours, so leaving the
+      // sidebar green would be silent degradation of exactly the kind this project avoids.
+      if (refused || isAuthFailure(detail)) await this._recordAccountError(account, detail);
     } finally {
       // close(), not logout(): LOGOUT is a command and queues behind whatever wedged the
       // transport, and the semaphore slot and sync guard below are only released after it.
@@ -2772,6 +2781,10 @@ export class ImapManager {
       // keeps hammering a provider that's refusing logins. Honored by the check above next tick.
       if (isAuthFailure(detail)) {
         this._noteAuthFailure(account);
+        // Recorded as well as backed off: the auth ladder runs to six hours, and an account
+        // that has stopped syncing for that long must say so in the sidebar rather than sit
+        // quietly green. A rejected password is not a transient the user should have to guess at.
+        await this._recordAccountError(account, detail);
       } else if (isConnectionRefusal(detail)) {
         this._noteConnectionRefusal(account);
         // Surface what we backed off on, for the same reason as the poll-only tick: gated on the
@@ -3137,7 +3150,7 @@ export class ImapManager {
               // watermark is withheld so the next pass retries this range.
               flags.length = 0;
               fullScanDeferred = true;
-              console.warn(`Integrity flag scan deferred for ${logAccount(account)}/${path}: over ${FLAG_SCAN_TIMEOUT_MS}ms — membership still verified, flags left to sync`);
+              console.warn(`Integrity flag scan deferred for ${logAccount(account)}/${path}: over ${FLAG_SCAN_TIMEOUT_MS}ms — pass abandoned, nothing verified, retrying next cycle`);
             } else {
               fetched = new Set(flags.map(f => f.uid));
               if (fetched.size !== client.mailbox.exists) throw new Error('Incomplete folder flag snapshot');
@@ -4080,10 +4093,10 @@ export class ImapManager {
       // backfill reached any other way (connect, reindex, folder walk) would still ask for
       // them every pass, climbing their attempt count and spending real FETCH load on
       // messages the server will not produce. Observed on a production iCloud account.
-      // Only suppress when the validity is known. With a null validity suppressedUids matches
-      // rows from ANY generation, so after a renumbering a ghost's UID number could belong to
-      // a real new message and we would silently never fetch it. Re-requesting a ghost costs
-      // one wasted FETCH; skipping real mail is unacceptable.
+      // Only suppress when the validity is known. suppressedUids returns nothing for a null
+      // epoch, so this is belt-and-braces rather than load-bearing, and it keeps the reason
+      // next to the call: a suppression that cannot be scoped to a generation would, after a
+      // renumbering, hide a real message that reused a ghost's UID number.
       const ghosts = bfUidValidity == null
         ? new Set()
         : await suppressedUids(account.id, folder, bfUidValidity);

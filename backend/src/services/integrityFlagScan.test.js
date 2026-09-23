@@ -207,3 +207,64 @@ describe('the flag watermark', () => {
     vi.useRealTimers();
   });
 });
+
+describe('the delta flag fetch', () => {
+  const acct = { id: 'acct', user_id: 'u', imap_host: 'imap.example.com' };
+  const observed = { uidValidity: 8n, uidNext: 40000, highestModseq: 999n };
+
+  // Captures what the integrity pass actually asked the server for.
+  function managerCapturing(mailbox) {
+    const calls = [];
+    query.mockClear();
+    query.mockImplementation(async (sql) => {
+      if (sql.includes('status_synced_modseq FROM folders')) return { rows: [{ status_synced_modseq: '500' }] };
+      if (sql.includes('FROM messages')) return { rows: [{ uid: '1', synced_at: null }] };
+      if (sql.includes('unfetchable_uids')) return { rows: [] };
+      return { rows: [], rowCount: 0 };
+    });
+    const mgr = Object.assign(Object.create(ImapManager.prototype), {
+      _withCountClient: async (_a, fn) => fn({
+        mailbox,
+        capabilities: new Map([['CONDSTORE', true]]),
+        getMailboxLock: async () => ({ release: vi.fn() }),
+        search: async () => [1],
+        fetch: (range, fields, opts) => {
+          calls.push({ range, opts });
+          return (async function* () { yield { uid: 1, flags: new Set() }; })();
+        },
+      }),
+      syncMessages: vi.fn().mockResolvedValue({}),
+      _applyFlagUpdates: vi.fn().mockResolvedValue(0),
+      _isMoveUidGuarded: () => false,
+      broadcast: vi.fn(), backfillMessages: vi.fn(), _bgConnSem: createKeyedSemaphore(2),
+    });
+    return { mgr, calls };
+  }
+
+  it('asks for a bounded UID range, not the whole mailbox', async () => {
+    // iCloud advertises CONDSTORE and ignores changedSince, returning everything in the
+    // requested range. A sub-budget bounds the wait; only the range bounds the work.
+    const { mgr, calls } = managerCapturing({ exists: 1, uidValidity: 8n, highestModseq: 999n, uidNext: 40000 });
+    await mgr._refreshObservedFolder(acct, 'INBOX', observed);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].range).toBe('35000:*');        // uidNext - DELTA_SCAN_UID_WINDOW
+    expect(calls[0].range).not.toBe('1:*');
+  });
+
+  it('issues a UID FETCH, so the range means UIDs and not sequence numbers', async () => {
+    // Without { uid: true } the range is interpreted as sequence numbers and the window is
+    // meaningless: "35000:*" would address the 35000th message onward, not UID 35000 onward.
+    const { mgr, calls } = managerCapturing({ exists: 1, uidValidity: 8n, highestModseq: 999n, uidNext: 40000 });
+    await mgr._refreshObservedFolder(acct, 'INBOX', observed);
+
+    expect(calls[0].opts).toMatchObject({ uid: true });
+    expect(calls[0].opts.changedSince).toBe(500n);
+  });
+
+  it('falls back to the whole mailbox only when the server reports no UIDNEXT', async () => {
+    const { mgr, calls } = managerCapturing({ exists: 1, uidValidity: 8n, highestModseq: 999n, uidNext: undefined });
+    await mgr._refreshObservedFolder(acct, 'INBOX', observed);
+    expect(calls[0].range).toBe('1:*');
+  });
+});
