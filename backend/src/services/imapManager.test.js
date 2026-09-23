@@ -14,7 +14,7 @@ vi.mock('./connectionPolicy.js', () => ({ getConnectionPolicy: vi.fn() }));
 vi.mock('./spamPipeline.js', () => ({ classifyAndTagMessage: vi.fn() }));
 vi.mock('./mailAccess.js', () => ({ getAccountAddresses: vi.fn(async () => []) }));
 
-import { ImapManager, MIN_SYNC_INTERVAL_MS, AUTO_IDLE_DELAY_MS, countMissingInboxCopies, fetchBackfillBatch, providerProfile, makeClientCfg, relocateExemptGuard, insertCopiedSibling, deleteMessageCopyRow, emitSectionsChanged, ensureMailbox, createKeyedSemaphore, isConnectionRefusal, connectCooldownMs, effectiveSyncIntervalMs, folderSyncDue, planModseqSync, connectStaggerFor, walkStructure, extractBodyFromMsg, bodyFallbackApplies, parsePersistentCap, resolvePersistentCap, persistentEligible, shouldRetryIPv4, classifyMoveBySearch, computeThreadId } from './imapManager.js';
+import { ImapManager, PREFETCH_MAX_CONSECUTIVE_ERRORS, MIN_SYNC_INTERVAL_MS, AUTO_IDLE_DELAY_MS, countMissingInboxCopies, fetchBackfillBatch, providerProfile, makeClientCfg, relocateExemptGuard, insertCopiedSibling, deleteMessageCopyRow, emitSectionsChanged, ensureMailbox, createKeyedSemaphore, isConnectionRefusal, connectCooldownMs, effectiveSyncIntervalMs, folderSyncDue, planModseqSync, connectStaggerFor, walkStructure, extractBodyFromMsg, bodyFallbackApplies, parsePersistentCap, resolvePersistentCap, persistentEligible, shouldRetryIPv4, classifyMoveBySearch, computeThreadId } from './imapManager.js';
 import { pluginRegistry } from '../plugins/registry.js';
 import { EventEmitter } from 'node:events';
 import { ImapFlow } from 'imapflow';
@@ -2737,5 +2737,140 @@ describe('computeThreadId subject fallback requires a shared correspondent (#468
     });
 
     expect(id).toBe('header-thread');
+  });
+});
+
+// ── Backfill error text (#474 follow-up) ─────────────────────────────────────
+//
+// imapflow rejects every failed IMAP command with the same Error('Command failed'), so a
+// log site using err.message explains nothing. v3.5.3 converted the log sites to
+// extractImapError but missed the backfill catch, and the reporter's post-upgrade logs
+// still showed "Backfill failed for .../Sent: Command failed" with the server's reason
+// discarded.
+//
+// This drives the real catch in backfillMessages rather than inspecting the source: the
+// first awaited call inside the try is a query(), so rejecting it with an imapflow-shaped
+// error reaches the catch the same way a failed FETCH does.
+describe('backfillMessages — error text (#474)', () => {
+  const imapFailure = () => Object.assign(new Error('Command failed'), {
+    responseText: 'AUTHENTICATE Server error - Please try again later',
+    serverResponseCode: 'UNAVAILABLE',
+  });
+
+  let mgr;
+  let spy;
+  beforeEach(() => {
+    mgr = new ImapManager({ clients: new Set() });
+    spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('logs the server explanation and response code, not the bare Command failed', async () => {
+    query.mockReset();
+    query.mockRejectedValue(imapFailure());
+
+    await mgr.backfillMessages({ id: 'acc-1', user_id: 'u1', imap_host: 'imap.mail.yahoo.com' }, 'Sent');
+
+    const line = spy.mock.calls.map(args => args.join(' ')).find(s => s.includes('Backfill failed'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('[UNAVAILABLE]');
+    expect(line).toContain('AUTHENTICATE Server error');
+    expect(line).not.toContain('Command failed');
+  });
+
+  it('releases the per-folder guard so a later backfill can run', async () => {
+    query.mockReset();
+    query.mockRejectedValue(imapFailure());
+    await mgr.backfillMessages({ id: 'acc-1', user_id: 'u1' }, 'Sent');
+    expect(mgr.backfillRunning.has('acc-1:Sent')).toBe(false);
+  });
+});
+
+// ── Body prefetch circuit breaker (#474 follow-up) ───────────────────────────
+//
+// prefetchFolderBodies caught each failure and continued to the next UID. Every iteration
+// opens its own login (fetchMessageBody retries once on a fresh one), so a provider that
+// was refusing turned one refusal into one per remaining message and consumed the account's
+// connection budget. The reporter saw prefetch failures repeating across UIDs after
+// v3.5.3, followed by 'IMAP connections busy, please retry' on unrelated operations.
+describe('prefetchFolderBodies — stops instead of hammering a refusing provider (#474)', () => {
+  const YAHOO = { id: 'acc-1', user_id: 'u1', imap_host: 'imap.mail.yahoo.com', enabled: true };
+  const UIDS = [101, 102, 103, 104, 105, 106, 107, 108];
+
+  let mgr;
+  function arrange(failWith) {
+    mgr = new ImapManager({ clients: new Set() });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    query.mockReset();
+    query.mockImplementation(async (sql) => {
+      if (sql.includes('FROM email_accounts')) return { rows: [YAHOO] };
+      if (sql.includes('id = ANY($1::uuid[])')) {
+        return { rows: UIDS.map(uid => ({ id: `m-${uid}`, uid, folder: 'INBOX' })) };
+      }
+      return { rows: [] }; // body-cached check: not cached, so each one is attempted
+    });
+    mgr.fetchMessageBody = vi.fn(async () => { throw failWith(); });
+    vi.spyOn(mgr, '_noteConnectionRefusal').mockImplementation(() => {});
+    return mgr;
+  }
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('stops after the FIRST refusal rather than trying every remaining message', async () => {
+    const mgr = arrange(() => Object.assign(new Error('Command failed'), {
+      responseText: 'AUTHENTICATE Server error - Please try again later',
+      serverResponseCode: 'UNAVAILABLE',
+    }));
+
+    await mgr.prefetchFolderBodies('acc-1', UIDS.map(u => `m-${u}`));
+
+    expect(mgr.fetchMessageBody).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT back off live sync when a best-effort prefetch is refused', async () => {
+    // _connectCooldown gates connectAccount, the health-check reconnect and the poll-only
+    // tick. Arming it from here would delay recovery of the user's actual mail flow because
+    // a background body fetch was refused, and would inflate the same failure counter that
+    // real connect refusals escalate on. The snippet indexer keeps its refusal backoff in a
+    // separate host-scoped map for exactly this reason.
+    const mgr = arrange(() => Object.assign(new Error('Command failed'), {
+      responseText: 'AUTHENTICATE Server error - Please try again later',
+      serverResponseCode: 'UNAVAILABLE',
+    }));
+
+    await mgr.prefetchFolderBodies('acc-1', UIDS.map(u => `m-${u}`));
+
+    expect(mgr._noteConnectionRefusal).not.toHaveBeenCalled();
+    expect(mgr._connectCooldown.has('acc-1')).toBe(false);
+  });
+
+  it('aborts after three consecutive failures that are not phrased as refusals', async () => {
+    // Yahoo answers a burst with [AUTHENTICATIONFAILED] on an account whose credentials are
+    // fine. That is not a refusal by wording, so only the consecutive-error guard stops it.
+    const mgr = arrange(() => Object.assign(new Error('Command failed'), {
+      responseText: 'AUTHENTICATE Invalid credentials',
+      serverResponseCode: 'AUTHENTICATIONFAILED',
+    }));
+
+    await mgr.prefetchFolderBodies('acc-1', UIDS.map(u => `m-${u}`));
+
+    expect(mgr.fetchMessageBody).toHaveBeenCalledTimes(PREFETCH_MAX_CONSECUTIVE_ERRORS);
+    expect(mgr._noteConnectionRefusal).not.toHaveBeenCalled();
+  });
+
+  it('does not abort on scattered failures, because the counter resets on success', async () => {
+    const mgr = arrange(() => new Error('nope'));
+    let n = 0;
+    mgr.fetchMessageBody = vi.fn(async () => {
+      n += 1;
+      if (n % 2 === 1) throw new Error('one bad message');
+      return { html: '<p>ok</p>', text: 'ok', attachments: [] };
+    });
+
+    await mgr.prefetchFolderBodies('acc-1', UIDS.map(u => `m-${u}`));
+
+    // Alternating failure/success never reaches three in a row, so every message is attempted.
+    expect(mgr.fetchMessageBody).toHaveBeenCalledTimes(UIDS.length);
   });
 });

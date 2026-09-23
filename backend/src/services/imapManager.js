@@ -244,6 +244,11 @@ const CONNECT_COOLDOWN_MAX_MS = 15 * 60 * 1000;  // capped at 15 min
 // A mid-operation "Socket timeout" is deliberately NOT matched — it isn't specific to a
 // connection limit and can fire on ordinary slow responses, where a backoff would only
 // delay recovery.
+// Consecutive body-prefetch failures tolerated before abandoning the run. Matches the
+// snippet indexer's threshold, for the same reason: two failures can be one bad message,
+// three in a row means the provider or the connection is the problem.
+export const PREFETCH_MAX_CONSECUTIVE_ERRORS = 3;
+
 export function isConnectionRefusal(detail) {
   // \[LIMIT\] is RFC 9051's response code for "ran up against an implementation limit".
   // It is generic rather than connection-specific, but backing off is the right answer to
@@ -2299,7 +2304,10 @@ export class ImapManager {
       // backfillAllFolders runs INBOX first, then all other known folders sequentially.
       if (shouldBackfill) {
         this.backfillAllFolders(account).catch(err =>
-          console.error(`Backfill error for ${logAccount(account)}:`, err.message)
+          // Same reason as the per-folder catch below: an IMAP rejection arriving here would
+          // otherwise read 'Command failed'. extractImapError falls back to err.message, so
+          // the non-IMAP errors that usually land here are unchanged.
+          console.error(`Backfill error for ${logAccount(account)}:`, extractImapError(err))
         );
       } else {
         logger.debug(`Backfill deferred on connect for ${logAccount(account)} — account already has cached mail`);
@@ -4392,7 +4400,12 @@ export class ImapManager {
       // on gtd_enabled + changedCount>0 only.
       await emitSectionsChanged(this.pluginFacade, account, backfilledRows);
     } catch (err) {
-      console.error(`Backfill failed for ${logAccount(account)}/${folder}:`, err.message);
+      // extractImapError, not err.message: everything in this try block runs IMAP commands
+      // (mailbox open, UID search, fetch), and imapflow rejects all of them with the same
+      // Error('Command failed'). #474 reported screens of exactly that from this line, with
+      // the server's own explanation discarded. Reported again after v3.5.3, because this
+      // site was missed when the other log sites were converted.
+      console.error(`Backfill failed for ${logAccount(account)}/${folder}:`, extractImapError(err));
     } finally {
       if (bfClient) { try { bfClient.close(); } catch { /* already disconnected */ } }
       this.backfillRunning.delete(backfillKey);
@@ -5042,6 +5055,7 @@ export class ImapManager {
     );
     if (!uncachedResult.rows.length) return;
 
+    let consecutiveErrors = 0;
     for (const msg of uncachedResult.rows) {
       const quietFor = Date.now() - (this.lastUserActivity.get(accountId) || 0);
       if (quietFor < QUIET_WINDOW_MS) {
@@ -5068,8 +5082,41 @@ export class ImapManager {
           );
         }
       } catch (err) {
-        console.warn(`Folder body prefetch failed for uid ${msg.uid}:`, err.message);
+        const detail = extractImapError(err);
+        console.warn(`Folder body prefetch failed for uid ${msg.uid}:`, detail);
+
+        // Stop the run instead of walking the rest of the list. Each iteration draws its own
+        // connection, so against a provider that is refusing, continuing turns one refusal
+        // into one more for every remaining message and consumes the account's connection
+        // budget. #474 reported that after v3.5.3: prefetch failures across a folder's UIDs,
+        // then 'IMAP connections busy' on unrelated work like deleting mail, because this
+        // loop had taken the pool.
+        //
+        // Two guards, matching the thresholds the snippet indexer uses:
+        //  - an explicit refusal stops the run at the first one, rather than waiting for the
+        //    consecutive count, because the provider has already said it is at its limit;
+        //  - any three consecutive failures stop it too, which covers a provider whose
+        //    refusal is not phrased as one (Yahoo answers a burst with [AUTHENTICATIONFAILED]
+        //    Invalid credentials on an account whose credentials are fine).
+        //
+        // Deliberately NOT armed onto the account's connect cooldown. That map gates
+        // connectAccount, the health-check reconnect and the poll-only tick, so arming it
+        // here would delay live sync recovery because a best-effort prefetch was refused.
+        // The snippet indexer keeps its refusal backoff in its own host-scoped map for the
+        // same reason: back off the background work to protect live sync, not the reverse.
+        // Prefetch is best-effort anyway. Bodies are fetched on demand when the message is
+        // opened, and the next folder view re-runs this for whatever is still uncached.
+        if (isConnectionRefusal(detail)) {
+          console.log(`Body prefetch stopping for ${logAccount(account)}: provider refusing connections`);
+          return;
+        }
+        if (++consecutiveErrors >= PREFETCH_MAX_CONSECUTIVE_ERRORS) {
+          console.log(`Body prefetch stopping for ${logAccount(account)} after ${consecutiveErrors} consecutive errors`);
+          return;
+        }
+        continue;
       }
+      consecutiveErrors = 0;
     }
   }
 
