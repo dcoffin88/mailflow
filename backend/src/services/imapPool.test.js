@@ -125,6 +125,43 @@ describe('connection fan-out when the pool is stalled (#474)', () => {
     for (const c of stalled) releasePooledClient(ACCOUNT, c);
   });
 
+  it('never exceeds the ceiling when several callers ask at once', async () => {
+    // The grow path checks pool.clients.length, then awaits a token refresh, a host resolve
+    // and a connect, and only then pushes. Callers that arrive together all pass the check
+    // before any of them has pushed, so the pool can open more than POOL_SIZE sockets. The
+    // ceiling is the safety property #474 introduced, so it has to hold under concurrency.
+    const asks = Array.from({ length: POOL_SIZE * 3 }, () => acquirePooledClient(ACCOUNT));
+    const settled = Promise.allSettled(asks);
+    // Let the reservations and connects resolve, then let the surplus give up.
+    await vi.advanceTimersByTimeAsync(ACQUIRE_TIMEOUT_MS + 1000);
+    const results = await settled;
+
+    expect(ImapFlow.mock.calls.length).toBeLessThanOrEqual(POOL_SIZE);
+    // And the ceiling is a real ceiling, not a stall: POOL_SIZE callers were served.
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(POOL_SIZE);
+    for (const r of results) if (r.status === 'fulfilled') releasePooledClient(ACCOUNT, r.value);
+  });
+
+  it('a failed connect does not leave a reservation that shrinks the pool forever', async () => {
+    // The ceiling is enforced by reserving a slot before the awaits. If a reservation
+    // outlived a failed connect, every failure would permanently cost the account one
+    // connection until restart, and enough failures would wedge the pool at zero.
+    ImapFlow.mockImplementationOnce(function () {
+      const c = new EventEmitter();
+      c.connect = vi.fn(() => Promise.reject(new Error('refused')));
+      c.logout = vi.fn(() => Promise.resolve());
+      c.close = vi.fn();
+      return c;
+    });
+    await expect(acquirePooledClient(ACCOUNT)).rejects.toThrow();
+
+    // The pool must still be able to open its full complement afterwards.
+    const got = [];
+    for (let i = 0; i < POOL_SIZE; i++) got.push(await acquirePooledClient(ACCOUNT));
+    expect(got).toHaveLength(POOL_SIZE);
+    for (const c of got) releasePooledClient(ACCOUNT, c);
+  });
+
   it('releasing a stalled connection lets a waiter reuse it rather than open one', async () => {
     // The control case: when the pool is not stalled the design works, so the fix must
     // preserve this. A released slot is handed straight to a waiter.

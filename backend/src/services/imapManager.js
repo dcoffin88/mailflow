@@ -88,7 +88,9 @@ async function connectImapClient(account, resolved, cfgOpts, timeoutMs, label) {
     client.on('error', (err) => {
       // Refusal detection stays unconditional: it drives the caller's backoff decision and
       // must observe a refusal that arrives while we are tearing the attempt down.
-      if (isConnectionRefusal(err?.message)) sawRefusal = true;
+      // extractImapError for the same reason as every other refusal check: a bare
+      // 'Command failed' hides the LIMIT / too-many-connections text this needs to see.
+      if (isConnectionRefusal(extractImapError(err))) sawRefusal = true;
       if (abandoned) return;
       recordWarning('imap_error', account?.id);
       console.error(`IMAP error for ${logAccount(account)}:`, err.message);
@@ -1426,7 +1428,7 @@ function drainWaiters(pool) {
 export async function acquirePooledClient(account) {
   const id = account.id;
   if (!connectionPools.has(id)) {
-    connectionPools.set(id, { clients: [], inUse: new Set(), waiters: [] });
+    connectionPools.set(id, { clients: [], inUse: new Set(), waiters: [], pending: 0 });
   }
   const pool = connectionPools.get(id);
 
@@ -1438,25 +1440,38 @@ export async function acquirePooledClient(account) {
   }
 
   // Grow pool if under limit — refresh token before creating a new connection
-  if (pool.clients.length < POOL_SIZE) {
-    const freshAccount = await ensureFreshToken(account);
-    const { resolved, policy } = await resolveAccountHost(freshAccount);
-    // Connect with the shared IPv4-fallback helper (#382); it attaches the #360 handshake-error
-    // listener and recovers from a stalled IPv6 handshake by retrying IPv4-only.
-    const client = await connectImapClient(freshAccount, resolved, { policy }, 30000, 'IMAP pool connect');
-    // Remove from pool immediately when the server closes the socket, then
-    // wake any waiters so they can claim another idle connection if one exists.
-    client.on('close', () => {
-      const p = connectionPools.get(id);
-      if (p) {
-        p.clients = p.clients.filter(c => c !== client);
-        p.inUse.delete(client);
-        drainWaiters(p);
-      }
-    });
-    pool.clients.push(client);
-    pool.inUse.add(client);
-    return client;
+  // `pending` counts connects that have been authorized but have not pushed a client yet.
+  // Without it the ceiling is advisory: this function checks the length, then awaits a token
+  // refresh, a host resolve and a connect, so callers arriving together all pass the check
+  // before any of them has pushed. Measured at 12 sockets against a POOL_SIZE of 4. The
+  // ceiling is the safety property #474 introduced, so it has to hold under concurrency.
+  if (pool.clients.length + pool.pending < POOL_SIZE) {
+    pool.pending += 1;
+    try {
+      const freshAccount = await ensureFreshToken(account);
+      const { resolved, policy } = await resolveAccountHost(freshAccount);
+      // Connect with the shared IPv4-fallback helper (#382); it attaches the #360 handshake-error
+      // listener and recovers from a stalled IPv6 handshake by retrying IPv4-only.
+      const client = await connectImapClient(freshAccount, resolved, { policy }, 30000, 'IMAP pool connect');
+      // Remove from pool immediately when the server closes the socket, then
+      // wake any waiters so they can claim another idle connection if one exists.
+      client.on('close', () => {
+        const p = connectionPools.get(id);
+        if (p) {
+          p.clients = p.clients.filter(c => c !== client);
+          p.inUse.delete(client);
+          drainWaiters(p);
+        }
+      });
+      pool.clients.push(client);
+      pool.inUse.add(client);
+      return client;
+    } finally {
+      // Released whether the connect succeeded or threw; a failed attempt must not leave a
+      // phantom reservation that permanently shrinks the pool.
+      pool.pending -= 1;
+      if (pool.pending === 0) drainWaiters(pool);
+    }
   }
 
   // Pool full — wait for a slot. drainWaiters hands the next freed connection to the
@@ -1489,12 +1504,15 @@ export async function acquirePooledClient(account) {
 
 export function releasePooledClient(account, client) {
   const pool = connectionPools.get(account.id);
-  if (!pool) { client.logout().catch(() => {}); return; }
+  // close(), not logout(), for the same reason as every other teardown here: a wedged
+  // LOGOUT holds the socket until TCP death, and these connections count against the
+  // provider's per-account limit the whole time.
+  if (!pool) { try { client.close(); } catch { /* already closed */ } return; }
   pool.inUse.delete(client);
   // If this client isn't in our pool (was a temp or already evicted on error),
   // log it out. logout() is async — must use .catch() not try/catch.
   if (!pool.clients.includes(client)) {
-    client.logout().catch(() => {});
+    try { client.close(); } catch { /* already closed */ }
   } else {
     drainWaiters(pool);
   }
@@ -1503,7 +1521,7 @@ export function releasePooledClient(account, client) {
 export function evictPool(accountId) {
   const pool = connectionPools.get(accountId);
   if (!pool) return;
-  for (const c of pool.clients) { c.logout().catch(() => {}); }
+  for (const c of pool.clients) { try { c.close(); } catch { /* already closed */ } }
   const evictErr = new Error('IMAP pool evicted');
   for (const entry of pool.waiters) { clearTimeout(entry.timer); entry.reject(evictErr); }
   connectionPools.delete(accountId);
@@ -2427,7 +2445,10 @@ export class ImapManager {
     } catch (err) {
       const detail = extractImapError(err);
       const refused = isConnectionRefusal(detail);
-      if (refused) this._noteConnectionRefusal(account);
+      // Auth first: a rejected password is permanent until someone fixes it, so it takes the
+      // long ladder rather than retrying every 30 seconds. Same order as connectAccount.
+      if (isAuthFailure(detail)) this._noteAuthFailure(account);
+      else if (refused) this._noteConnectionRefusal(account);
       console.warn(`Poll-only sync error for ${logAccount(account)}: ${detail}`);
       // Surface only what we actually backed off on. Gated (unlike the connect paths, which
       // record any failure) because this catch also fires on ordinary slow ticks, and one
@@ -2638,7 +2659,8 @@ export class ImapManager {
         } catch (reconnErr) {
           const detail = extractImapError(reconnErr);
           // Back off on a connection-refusal so the interval stops hammering — mirrors connectAccount.
-          if (isConnectionRefusal(detail)) this._noteConnectionRefusal(account);
+          if (isAuthFailure(detail)) this._noteAuthFailure(account);
+          else if (isConnectionRefusal(detail)) this._noteConnectionRefusal(account);
           console.error(`Reconnect failed for ${logAccount(account)}:`, detail);
           // A failed reconnect is the same class of failure as a failed first connect, so record
           // it exactly as connectAccount does. This was the gap: an account whose host died
@@ -2748,7 +2770,9 @@ export class ImapManager {
       // A refusal on the sync path (notably the fresh-login poll, which never reaches the
       // reconnect gate) must arm the same backoff the connect paths use — otherwise the poll
       // keeps hammering a provider that's refusing logins. Honored by the check above next tick.
-      if (isConnectionRefusal(detail)) {
+      if (isAuthFailure(detail)) {
+        this._noteAuthFailure(account);
+      } else if (isConnectionRefusal(detail)) {
         this._noteConnectionRefusal(account);
         // Surface what we backed off on, for the same reason as the poll-only tick: gated on the
         // refusal so a one-off 'Sync wall-clock timeout' doesn't flag an otherwise healthy account.
@@ -3008,7 +3032,9 @@ export class ImapManager {
       client = await connectImapClient(fresh, resolved, { policy }, 25000, 'Folder status connect');
       return await fn(client);
     } catch (err) {
-      if (isConnectionRefusal(extractImapError(err))) this._noteConnectionRefusal(account);
+      const countDetail = extractImapError(err);
+      if (isAuthFailure(countDetail)) this._noteAuthFailure(account);
+      else if (isConnectionRefusal(countDetail)) this._noteConnectionRefusal(account);
       throw err;
     } finally {
       if (client) { try { client.close(); } catch { /* already closed */ } }
@@ -3117,17 +3143,45 @@ export class ImapManager {
               if (fetched.size !== client.mailbox.exists) throw new Error('Incomplete folder flag snapshot');
             }
           } else if (plan === 'changedsince') {
-            for await (const m of client.fetch('1:*', { uid: true, flags: true }, { changedSince: BigInt(storedFlagModseq) })) {
-              flags.push({ uid: m.uid, isRead: m.flags.has('\\Seen'), isStarred: m.flags.has('\\Flagged') });
+            // Same sub-budget as the full scan. CHANGEDSINCE is only cheap if the server
+            // honors it, and advertising CONDSTORE is not a promise that it will: iCloud
+            // advertises CONDSTORE and returns the entire mailbox regardless of the modseq
+            // asked for (measured: all 22,904 messages for a 5-modseq window). It happens to
+            // be fast enough that this does not bite there, but a server that both ignores
+            // CHANGEDSINCE and is slow would re-enter the unbounded fetch this pass exists
+            // to avoid. Never leave a fetch unbounded inside a budgeted operation.
+            const delta = (async () => {
+              for await (const m of client.fetch('1:*', { uid: true, flags: true }, { changedSince: BigInt(storedFlagModseq) })) {
+                flags.push({ uid: m.uid, isRead: m.flags.has('\\Seen'), isStarred: m.flags.has('\\Flagged') });
+              }
+            })();
+            delta.catch(() => {});
+            const deltaOutcome = await Promise.race([
+              delta,
+              new Promise(res => setTimeout(() => res(FLAG_SCAN_TIMED_OUT), FLAG_SCAN_TIMEOUT_MS)),
+            ]);
+            if (deltaOutcome === FLAG_SCAN_TIMED_OUT) {
+              flags.length = 0;
+              fullScanDeferred = true;
+              console.warn(`Integrity delta flag scan deferred for ${logAccount(account)}/${path}: over ${FLAG_SCAN_TIMEOUT_MS}ms`);
             }
           }
+
+          // A deferred scan leaves its FETCH still running and still owning the connection's
+          // command queue: imapflow serializes commands, so a SEARCH issued now would simply
+          // queue behind the fetch we just gave up on and burn the outer budget anyway. End
+          // the pass instead and retry next tick. Nothing is checkpointed, so nothing is
+          // claimed to be verified. Folders large enough to skip the scan entirely never
+          // reach here, which is the case this whole change is for.
+          if (fullScanDeferred) return;
           // Advance the flag watermark unless a full scan was cut short. 'skip' seeds it on
           // purpose: without a baseline a large folder can never reach the cheap CHANGEDSINCE
           // path, so it would stay on the expensive plan forever. Seeding means flag changes
           // from before the seed are not applied BY THIS PASS, which costs nothing real: the
           // ordinary sync path runs its own modseq-aware flag scan every tick and owns flag
           // freshness. What it buys is that every later pass costs ~3s instead of skipping.
-          flagsCovered = !fullScanDeferred;
+          // A deferred scan returned above, so reaching here means the flags are covered.
+          flagsCovered = true;
 
           const uids = await client.search({ all: true }, { uid: true });
           if (!Array.isArray(uids)) throw new Error('Incomplete folder UID snapshot');
@@ -3935,6 +3989,10 @@ export class ImapManager {
       // UID SEARCH ALL is a single lightweight command that returns a flat list of
       // integers — no message data transferred, even for 50 000-message mailboxes.
       let serverUids;
+      // Captured inside the mailbox lock below: bfClient.mailbox is cleared once the lock
+      // is released, and the ghost filter further down must match on the validity in force
+      // when the UID set was read, not on whatever the client happens to hold later.
+      let bfUidValidity = null;
       {
         const lock = await bfClient.getMailboxLock(folder);
         try {
@@ -3952,6 +4010,7 @@ export class ImapManager {
           // UIDVALIDITY check — if this backfill connection sees a different epoch than
           // what is stored, purge stale rows so the diff below re-fetches everything.
           const currentValidity = bfClient.mailbox?.uidValidity ? Number(bfClient.mailbox.uidValidity) : null;
+          bfUidValidity = currentValidity;
           if (currentValidity) {
             const foldRow = await query(
               'SELECT uid_validity FROM folders WHERE account_id = $1 AND path = $2',
@@ -4007,8 +4066,20 @@ export class ImapManager {
         return;
       }
 
+      // UIDs the server has repeatedly refused to hand over are excluded here as well as in
+      // the integrity check. The integrity check stops SCHEDULING a backfill for them, but a
+      // backfill reached any other way (connect, reindex, folder walk) would still ask for
+      // them every pass, climbing their attempt count and spending real FETCH load on
+      // messages the server will not produce. Observed on a production iCloud account.
+      // Only suppress when the validity is known. With a null validity suppressedUids matches
+      // rows from ANY generation, so after a renumbering a ghost's UID number could belong to
+      // a real new message and we would silently never fetch it. Re-requesting a ghost costs
+      // one wasted FETCH; skipping real mail is unacceptable.
+      const ghosts = bfUidValidity == null
+        ? new Set()
+        : await suppressedUids(account.id, folder, bfUidValidity);
       const missingUids = serverUids
-        .filter(uid => !existingUids.has(uid))
+        .filter(uid => !existingUids.has(uid) && !ghosts.has(Number(uid)))
         .sort((a, b) => b - a);
 
       if (missingUids.length === 0) {
@@ -4622,7 +4693,9 @@ export class ImapManager {
             // can starve the live sync/IDLE connection — the exact failure that lets new mail slip
             // through. Stop this run and back the whole host off hard instead; the 10-minute
             // scheduler resumes the backlog once the provider is calm.
-            if (isConnectionRefusal(err.message)) {
+            // extractImapError, not err.message: every rejection is the generic 'Command failed'
+            // until the server's own text is pulled out, so this never armed the host backoff.
+            if (isConnectionRefusal(extractImapError(err))) {
               failed = true;
               refused = true;
               console.log(`Snippet indexer backing off ${logAccount(account)} — provider refusing connections (at limit)`);

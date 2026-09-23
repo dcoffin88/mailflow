@@ -180,31 +180,30 @@ describe('the flag watermark', () => {
     expect(modseqOf()).toBe('999');
   });
 
-  it('is withheld when a full scan was cut short, so the range is retried', async () => {
+  it('is not written at all when a scan was cut short, and nothing is claimed as verified', async () => {
     vi.useFakeTimers();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const uids = [1, 2, 3];
     const mgr = managerFor({ uids, exists: 3, condstore: false, storedModseq: null, localUids: uids });
-    // A scan that never finishes: the sub-budget must abandon it rather than fail the pass.
+    // A scan that never finishes. The sub-budget abandons the await, but the FETCH still
+    // owns the connection, so the pass ends rather than queueing a SEARCH behind it.
     mgr._withCountClient = async (_a, fn) => fn({
       mailbox: { exists: 3, uidValidity: 8n, highestModseq: 999n },
       capabilities: new Map(),
       getMailboxLock: async () => ({ release: vi.fn() }),
       search: async () => uids,
-      // Hangs forever: the sub-budget must abandon it. The unreachable yield is only
-      // there because an async generator without one is a lint error.
+      // Hangs forever; the unreachable yield is only to satisfy require-yield.
       fetch: async function* () { await new Promise(() => {}); yield null; },
     });
     const pass = mgr._refreshObservedFolder(acct, 'INBOX', observed);
     await vi.advanceTimersByTimeAsync(25000);
     await pass;
 
-    // Membership was still verified, so no gap and no backfill...
-    expect(mgr.backfillMessages).not.toHaveBeenCalled();
-    // ...nothing was pruned, because there was no corroborated snapshot...
+    // Nothing pruned, nothing backfilled, and no checkpoint: the pass verified nothing and
+    // says so by leaving no trace, rather than recording a partial result as a success.
     expect(query.mock.calls.filter(([sql]) => /^DELETE/i.test(sql.trim()))).toHaveLength(0);
-    // ...and the watermark did not move, so the next pass retries these flags.
-    expect(modseqOf()).toBeNull();
+    expect(mgr.backfillMessages).not.toHaveBeenCalled();
+    expect(modseqOf()).toBeUndefined();
     vi.useRealTimers();
   });
 });
