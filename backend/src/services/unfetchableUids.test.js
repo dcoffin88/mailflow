@@ -100,8 +100,29 @@ describe('suppressedUids', () => {
     query.mockResolvedValue({ rows: [] });
     await suppressedUids('acct', 'INBOX', 777);
     const [sql, params] = query.mock.calls[0];
-    expect(sql).toMatch(/uid_validity/);
+    expect(sql).toMatch(/uid_validity = \$5/);
     expect(params[4]).toBe('777');
+    // The predicate must require an exact epoch match. It previously also matched when
+    // either side was NULL, which made those rows wildcards across every generation. Checked
+    // against a live Postgres with rows at epochs 1000 and 2000: the old predicate suppressed
+    // both, this one suppresses only the row whose epoch is current. A suppressed UID from a
+    // dead epoch would mean silently never fetching whatever real message reused that number.
+    expect(sql).not.toMatch(/uid_validity IS NULL/);
+    expect(sql).not.toMatch(/\$5::bigint IS NULL/);
+  });
+
+  it('suppresses nothing when the current uidvalidity is unknown', async () => {
+    // Matching everything is the failure mode above, so an unknown epoch must suppress
+    // nothing rather than everything. Re-requesting a ghost costs one wasted FETCH.
+    const got = await suppressedUids('acct', 'INBOX', null);
+    expect(got).toEqual(new Set());
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('records nothing when the server did not report a uidvalidity', async () => {
+    // A record with no epoch cannot be scoped, so it would behave as a wildcard forever.
+    await recordUnfetchable('acct', 'INBOX', [900], null);
+    expect(query).not.toHaveBeenCalled();
   });
 
   it('gives up suppressing after a week, which is more than three attempts apart', () => {

@@ -30,6 +30,11 @@ export const UNFETCHABLE_RETRY_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
  */
 export async function recordUnfetchable(accountId, folder, uids, uidValidity) {
   if (!uids?.length) return;
+  // A record with no epoch cannot be scoped, and an unscoped record suppresses a UID under
+  // every future generation: after a renumbering that UID number belongs to a different
+  // message, which we would then silently never fetch. Better to forget the ghost than to
+  // risk skipping real mail, so if the server did not tell us the UIDVALIDITY, record nothing.
+  if (uidValidity == null) return;
   await query(
     `INSERT INTO unfetchable_uids (account_id, folder, uid, uid_validity)
      SELECT $1, $2, unnest($3::bigint[]), $4
@@ -49,12 +54,17 @@ export async function recordUnfetchable(accountId, folder, uids, uidValidity) {
  * that no longer exist and must not suppress a real gap.
  */
 export async function suppressedUids(accountId, folder, uidValidity) {
+  // Without a current epoch there is nothing to match against, and matching everything is
+  // the failure mode above. Suppress nothing: re-requesting a ghost costs one FETCH.
+  if (uidValidity == null) return new Set();
   const { rows } = await query(
     `SELECT uid FROM unfetchable_uids
       WHERE account_id = $1 AND folder = $2
         AND attempts >= $3
         AND last_attempt_at > now() - ($4::bigint || ' milliseconds')::interval
-        AND ($5::bigint IS NULL OR uid_validity IS NULL OR uid_validity = $5)`,
+        -- Exact epoch match only. The previous version also matched when either side was
+        -- NULL, which made those rows wildcards across generations.
+        AND uid_validity = $5`,
     [accountId, folder, UNFETCHABLE_ATTEMPT_THRESHOLD, String(UNFETCHABLE_RETRY_AFTER_MS),
      uidValidity == null ? null : String(uidValidity)]
   );

@@ -3150,8 +3150,17 @@ export class ImapManager {
             // be fast enough that this does not bite there, but a server that both ignores
             // CHANGEDSINCE and is slow would re-enter the unbounded fetch this pass exists
             // to avoid. Never leave a fetch unbounded inside a budgeted operation.
+            // Windowed the same way the sync delta scan is, and for the same documented
+            // reason: iCloud advertises CONDSTORE but ignores changedSince and returns the
+            // whole requested range. A sub-budget alone bounds the wait, not the work; the
+            // window bounds the work. Recent UIDs are the ones whose flags change, and the
+            // reactive IDLE path covers live events, so this is a backstop rather than the
+            // primary flag mechanism. Servers that honor changedSince return only what
+            // changed regardless of the window.
+            const uidNext = Number(client.mailbox?.uidNext) || 0;
+            const deltaLow = uidNext > DELTA_SCAN_UID_WINDOW ? uidNext - DELTA_SCAN_UID_WINDOW : 1;
             const delta = (async () => {
-              for await (const m of client.fetch('1:*', { uid: true, flags: true }, { changedSince: BigInt(storedFlagModseq) })) {
+              for await (const m of client.fetch(`${deltaLow}:*`, { uid: true, flags: true }, { uid: true, changedSince: BigInt(storedFlagModseq) })) {
                 flags.push({ uid: m.uid, isRead: m.flags.has('\\Seen'), isStarred: m.flags.has('\\Flagged') });
               }
             })();
