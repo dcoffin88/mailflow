@@ -6409,6 +6409,21 @@ export class ImapManager {
             console.warn(`Reconcile: no UID list for ${logAccount(account)}/${folder} (search returned ${serverUids}) — skipping folder`);
             continue;
           }
+          // An ARRAY is iterable, so the guard above never caught the case that matters: a
+          // SEARCH that comes back empty, or short, for a folder the server just reported as
+          // non-empty at SELECT. Trusted, that marks every cached row an orphan and empties
+          // the folder locally. #472 (Strato/Dovecot): deleting one message in a 15-message
+          // INBOX logged "removing 15 server-deleted message(s)"; backfill restored the rows
+          // and the periodic reconcile purged them again, a ten-minute loop the user saw as
+          // the mailbox flashing empty. Whether the SEARCH response was misparsed or the
+          // server answered wrongly is not established, and does not need to be: two server
+          // statements about the same folder disagree, so neither is trusted for deletion.
+          // The integrity pass has made exactly this check since it was written.
+          const exists = client.mailbox?.exists;
+          if (Number.isFinite(exists) && serverUids.length !== exists) {
+            console.warn(`Reconcile: UID list for ${logAccount(account)}/${folder} has ${serverUids.length} entries but the server reports ${exists} messages: not trusted, skipping folder`);
+            continue;
+          }
           serverUidsByFolder.set(folder, new Set(serverUids));
         }
       });

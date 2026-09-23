@@ -3296,3 +3296,83 @@ describe('fetchMessageBody under an armed backoff (#474)', () => {
     expect(err.poolExhausted).toBe(true);
   });
 });
+// ── reconcileDeletes must not trust a SEARCH result the server contradicts (#472) ──────
+//
+// Reported on a Strato (Dovecot) account: deleting ONE message in a 15-message INBOX logged
+// "Reconcile: removing 15 server-deleted message(s)" and emptied the folder locally, then
+// backfill restored the rows and the periodic reconcile purged them again, a ten-minute loop
+// the user saw as the mailbox flashing empty. UID SEARCH ALL had returned an empty array for
+// a folder the server had just reported as non-empty at SELECT. reconcileDeletes guarded
+// against search() returning false/undefined, but an empty ARRAY is iterable and was taken
+// as authoritative. The integrity pass already refuses a SEARCH result whose size disagrees
+// with mailbox.exists; this brings reconcile in line with it.
+//
+// Drives the real reconcileDeletes through the real pool: ImapFlow is mocked at module
+// level, so connectImapClient hands back our fake. Each test uses its own account id
+// because the pool is module-level and would otherwise reuse a previous test's fake client.
+describe('reconcileDeletes — SEARCH result vs mailbox.exists (#472)', () => {
+  let seq = 0;
+  function arrange({ exists, searchResult, dbUids }) {
+    const account = { id: `acct-472-${++seq}`, user_id: 'u1', imap_host: 'imap.strato.de', email_address: 'x@example.test' };
+    const mgr = new ImapManager({ clients: new Set() });
+    vi.spyOn(mgr, '_isMoveUidGuarded').mockReturnValue(false);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    ImapFlow.mockImplementation(function () {
+      const client = new EventEmitter();
+      client.usable = true;
+      client.connect = vi.fn(() => Promise.resolve());
+      client.logout = vi.fn(() => Promise.resolve());
+      client.close = vi.fn();
+      client.noop = vi.fn(() => Promise.resolve());
+      client.getMailboxLock = vi.fn(async (path) => {
+        client.mailbox = { path, exists };
+        return { release: vi.fn() };
+      });
+      client.search = vi.fn(async () => searchResult);
+      return client;
+    });
+    getConnectionPolicy.mockResolvedValue({ allowPrivateHosts: true, allowInsecureTls: true });
+    resolveForConnection.mockResolvedValue({ host: '127.0.0.1', addresses: ['127.0.0.1'], servername: null });
+    query.mockReset();
+    query.mockImplementation(async (sql) => {
+      if (sql.includes('SELECT DISTINCT m.folder')) return { rows: [{ folder: 'INBOX' }] };
+      if (sql.includes('SELECT uid FROM messages')) return { rows: dbUids.map(uid => ({ uid })) };
+      return { rows: [], rowCount: 0 };
+    });
+    return { mgr, account };
+  }
+  const deletes = () => query.mock.calls.filter(([sql]) => sql.includes('DELETE FROM messages'));
+  afterEach(() => { vi.restoreAllMocks(); ImapFlow.mockReset(); });
+
+  it('does NOT purge a folder when SEARCH returns nothing but the server says it is non-empty', async () => {
+    // The reported case: 14 still on the server, SEARCH came back empty, 15 rows cached.
+    const { mgr, account } = arrange({ exists: 14, searchResult: [], dbUids: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] });
+    await mgr.reconcileDeletes(account);
+    expect(deletes()).toHaveLength(0);
+  });
+
+  it('does NOT purge when SEARCH returns fewer UIDs than the server reports', async () => {
+    const { mgr, account } = arrange({ exists: 14, searchResult: [1,2,3,4,5,6,7,8,9,10], dbUids: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] });
+    await mgr.reconcileDeletes(account);
+    expect(deletes()).toHaveLength(0);
+  });
+
+  it('still removes the genuine orphan when SEARCH and the server agree', async () => {
+    const { mgr, account } = arrange({ exists: 14, searchResult: [1,2,3,4,5,6,7,8,9,10,11,12,13,14], dbUids: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15] });
+    await mgr.reconcileDeletes(account);
+    const del = deletes();
+    expect(del).toHaveLength(1);
+    expect(del[0][1][2]).toEqual([15]);
+  });
+
+  it('still empties a folder the server itself reports as empty', async () => {
+    // exists === 0 and an empty SEARCH agree, so every cached row really is gone. This is
+    // why a blanket "never delete all rows of a folder" backstop would be wrong.
+    const { mgr, account } = arrange({ exists: 0, searchResult: [], dbUids: [7, 8, 9] });
+    await mgr.reconcileDeletes(account);
+    const del = deletes();
+    expect(del).toHaveLength(1);
+    expect(del[0][1][2]).toEqual([7, 8, 9]);
+  });
+});
