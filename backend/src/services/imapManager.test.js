@@ -2856,9 +2856,11 @@ describe('prefetchFolderBodies — stops instead of hammering a refusing provide
     expect(mgr.fetchMessageBody).not.toHaveBeenCalled();
   });
 
-  it('aborts after three consecutive failures that are not phrased as refusals', async () => {
+  it('stops at the FIRST rejected AUTHENTICATE and arms the backoff', async () => {
     // Yahoo answers a burst with [AUTHENTICATIONFAILED] on an account whose credentials are
-    // fine. That is not a refusal by wording, so only the consecutive-error guard stops it.
+    // fine. It is not a refusal by wording, so if only the refusal test armed the backoff,
+    // this loop would be re-entered on the next folder view and spend three more logins,
+    // every view, for as long as the provider stayed busy.
     const mgr = arrange(() => Object.assign(new Error('Command failed'), {
       responseText: 'AUTHENTICATE Invalid credentials',
       serverResponseCode: 'AUTHENTICATIONFAILED',
@@ -2866,7 +2868,21 @@ describe('prefetchFolderBodies — stops instead of hammering a refusing provide
 
     await mgr.prefetchFolderBodies('acc-1', UIDS.map(u => `m-${u}`));
 
+    expect(mgr.fetchMessageBody).toHaveBeenCalledTimes(1);
+    expect(mgr._secondaryCooldown.has('acc-1')).toBe(true);
+    // Still never the account-wide ladder: the user's own login is working.
+    expect(mgr._connectCooldown.has('acc-1')).toBe(false);
+  });
+
+  it('stops after three consecutive message-level failures WITHOUT arming a backoff', async () => {
+    // An expunged UID or a body that will not parse says nothing about the connection, so
+    // the next folder view should be free to try again immediately.
+    const mgr = arrange(() => new Error('some message-level problem'));
+
+    await mgr.prefetchFolderBodies('acc-1', UIDS.map(u => `m-${u}`));
+
     expect(mgr.fetchMessageBody).toHaveBeenCalledTimes(PREFETCH_MAX_CONSECUTIVE_ERRORS);
+    expect(mgr._secondaryCooldown.has('acc-1')).toBe(false);
     expect(mgr._noteConnectionRefusal).not.toHaveBeenCalled();
   });
 
@@ -2914,11 +2930,21 @@ describe('secondary connection backoff (#474)', () => {
     expect(mgr._secondaryCooldown.get(account.id).failures).toBe(4);
   });
 
-  it('is not cleared by the live-sync cooldown being cleared', () => {
+  it('survives a successful sync clearing the live-sync cooldown (the actual bug)', () => {
     mgr._noteSecondaryRefusal(account);
+    // This is the line a successful sync tick runs. It must not speak for secondary work.
     mgr._connectCooldown.delete(account.id);
-    mgr.clearConnectCooldown(account.id);
     expect(mgr._secondaryCooldown.has(account.id)).toBe(true);
+  });
+
+  it('IS cleared by an explicit human reconnect, so the button is not a no-op', () => {
+    // clearConnectCooldown is the deliberate user action (editing the account, pressing
+    // Reconnect). Leaving folder counts and prefetch frozen for up to the cap after someone
+    // has asked for a retry makes the button look broken.
+    mgr._noteSecondaryRefusal(account);
+    mgr.clearConnectCooldown(account.id);
+    expect(mgr._secondaryCooldown.has(account.id)).toBe(false);
+    expect(mgr._connectCooldown.has(account.id)).toBe(false);
   });
 
   // Drives the real _withCountClient rather than calling the helper, so the wiring is what
@@ -2964,6 +2990,36 @@ describe('secondary connection backoff (#474)', () => {
       expect(mgr._connectCooldown.has(account.id)).toBe(false);
     });
 
+    it('clears the backoff when the LOGIN succeeds but the work afterwards fails', async () => {
+      // The provider accepting the connection is the entire signal this backoff tracks. An
+      // integrity pass or a mailbox open failing afterwards says nothing about whether
+      // secondary connections are welcome, and leaving the backoff armed after a login that
+      // plainly worked would block the next attempt for no reason.
+      arrangeConnect(() => Promise.resolve());
+      mgr._secondaryCooldown.set(account.id, { until: Date.now() - 1, failures: 3 });
+
+      await expect(mgr._withCountClient(account, async () => { throw new Error('mailbox open failed'); }))
+        .rejects.toThrow('mailbox open failed');
+
+      expect(mgr._secondaryCooldown.has(account.id)).toBe(false);
+    });
+
+    it('arms the SECONDARY ladder on a rejected AUTHENTICATE, not the account-wide one', async () => {
+      // Routing this to _noteAuthFailure would pause periodic sync for at least five minutes,
+      // escalating toward six hours, on an account whose own login is working. A genuinely
+      // wrong password is still caught by connectAccount, the reconnect path and the
+      // poll-only tick, which each call _noteAuthFailure themselves.
+      arrangeConnect(() => Promise.reject(Object.assign(new Error('Command failed'), {
+        responseText: 'AUTHENTICATE Invalid credentials',
+        serverResponseCode: 'AUTHENTICATIONFAILED',
+      })));
+
+      await expect(mgr._withCountClient(account, async () => 'ok')).rejects.toThrow();
+
+      expect(mgr._secondaryCooldown.get(account.id)?.failures).toBe(1);
+      expect(mgr._connectCooldown.has(account.id)).toBe(false);
+    });
+
     it('refuses to open while a backoff is active', async () => {
       arrangeConnect(() => Promise.resolve());
       mgr._secondaryCooldown.set(account.id, { until: Date.now() + 30000, failures: 1 });
@@ -2988,5 +3044,34 @@ describe('secondary connection backoff (#474)', () => {
   it('does not block once a backoff has expired', () => {
     mgr._secondaryCooldown.set(account.id, { until: Date.now() - 1, failures: 9 });
     expect(mgr._secondaryConnectBlocked(account.id)).toBeNull();
+  });
+});
+
+// The third 'Command failed' sink #474 exposed. Drives the real catch: _queueObservedFolder
+// kicks off a promise chain, so rejecting _refreshObservedFolder reaches the same handler a
+// failed IMAP command would.
+describe('folder integrity sync error text (#474)', () => {
+  it('logs the server explanation rather than the bare Command failed', async () => {
+    const mgr = new ImapManager({ clients: new Set() });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    query.mockReset();
+    query.mockResolvedValue({ rows: [] });
+    mgr._refreshObservedFolder = vi.fn(() => Promise.reject(Object.assign(new Error('Command failed'), {
+      responseText: 'AUTHENTICATE Server error - Please try again later',
+      serverResponseCode: 'UNAVAILABLE',
+    })));
+
+    const queued = mgr._queueObservedFolder(
+      { id: 'acc-1', user_id: 'u1', imap_host: 'imap.mail.yahoo.com' }, 'INBOX', {});
+    expect(queued).toBe(true);
+    // Let the chain settle.
+    await new Promise(r => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
+
+    const line = warn.mock.calls.map(a => a.join(' ')).find(l => l.includes('Folder integrity sync failed'));
+    expect(line).toBeTruthy();
+    expect(line).toContain('[UNAVAILABLE]');
+    expect(line).not.toContain('Command failed');
+    vi.restoreAllMocks();
   });
 });

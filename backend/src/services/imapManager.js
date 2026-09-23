@@ -2525,6 +2525,10 @@ export class ImapManager {
   // instead of waiting out a cooldown that may be hours long.
   clearConnectCooldown(accountId) {
     this._connectCooldown.delete(accountId);
+    // The secondary backoff goes too. This is the explicit human action (editing the account,
+    // pressing Reconnect), and leaving folder counts and prefetch frozen for up to the 15
+    // minute cap after the user has asked for a retry makes the button look broken.
+    this._secondaryCooldown.delete(accountId);
   }
 
   // Arm/extend the backoff for secondary connections. Same ladder as _noteConnectionRefusal,
@@ -3094,16 +3098,28 @@ export class ImapManager {
       const fresh = await raceTimeout(ensureFreshToken(current), 15000, 'Count token refresh');
       const { resolved, policy } = await raceTimeout(resolveAccountHost(fresh), 15000, 'Count host resolve');
       client = await connectImapClient(fresh, resolved, { policy }, 25000, 'Folder status connect');
-      const result = await fn(client);
-      // A secondary connection got through, so the provider is accepting them again.
+      // Cleared here rather than after fn: the provider accepting the LOGIN is the whole
+      // signal this backoff tracks. Work failing afterwards (an integrity pass, a mailbox
+      // that will not open) says nothing about whether secondary connections are welcome,
+      // and clearing later would leave the backoff armed after a login that plainly worked.
       this._clearSecondaryCooldown(account.id);
-      return result;
+      return await fn(client);
     } catch (err) {
       const countDetail = extractImapError(err);
-      // Auth failures stay on the account-wide ladder: a rejected password is not specific to
-      // secondary connections and fixing it is a human action, not something a retry resolves.
-      if (isAuthFailure(countDetail)) this._noteAuthFailure(account);
-      else if (isConnectionRefusal(countDetail)) this._noteSecondaryRefusal(account);
+      // Both an outright refusal and a rejected AUTHENTICATE take the SECONDARY ladder.
+      //
+      // A genuinely wrong password is not missed by this: connectAccount, the reconnect path
+      // and the poll-only tick all call _noteAuthFailure themselves, and they own the long
+      // 5m-to-6h ladder because they are the account's real login. Routing a secondary
+      // failure there instead would let one refused background connection pause periodic sync
+      // for at least five minutes, escalating toward hours, on an account whose own login is
+      // working. Yahoo answers a burst of concurrent logins with [AUTHENTICATIONFAILED]
+      // Invalid credentials on exactly such an account (#474), so that is not a theoretical
+      // case, and it is the reverse of what this backoff is for: hold back the background
+      // work, never the user's mail.
+      if (isAuthFailure(countDetail) || isConnectionRefusal(countDetail)) {
+        this._noteSecondaryRefusal(account);
+      }
       throw err;
     } finally {
       if (client) { try { client.close(); } catch { /* already closed */ } }
@@ -3129,7 +3145,9 @@ export class ImapManager {
       })
       .catch(err => {
         this._noteIntegrityRetry(key);
-        console.warn(`Folder integrity sync failed for account ${account.id}: ${err.message}`);
+        // extractImapError, not err.message: this path runs IMAP commands, so a rejection is
+        // the generic 'Command failed' until the server's own text is pulled out.
+        console.warn(`Folder integrity sync failed for account ${account.id}: ${extractImapError(err)}`);
       })
       .finally(() => this._statusSyncRunning.delete(key));
     return true;
@@ -5163,11 +5181,20 @@ export class ImapManager {
         // sync, not the reverse.
         // Prefetch is best-effort anyway. Bodies are fetched on demand when the message is
         // opened, and the next folder view re-runs this for whatever is still uncached.
-        if (isConnectionRefusal(detail)) {
+        // A refusal, or a rejected AUTHENTICATE, stops the run at the first one AND arms the
+        // backoff. Arming is what stops the next folder view from paying for the same
+        // failures again: without it this loop is re-entered on every GET /messages and
+        // spends another handful of logins before giving up. Yahoo's throttle arrives as
+        // [AUTHENTICATIONFAILED] rather than a refusal (#474), so matching only the refusal
+        // wording would leave exactly that case hammering, three logins per view.
+        if (isConnectionRefusal(detail) || isAuthFailure(detail)) {
           this._noteSecondaryRefusal(account);
-          console.log(`Body prefetch stopping for ${logAccount(account)}: provider refusing connections`);
+          console.log(`Body prefetch stopping for ${logAccount(account)}: provider is refusing connections`);
           return;
         }
+        // Anything else is about the messages, not the connection (an expunged UID, a body
+        // that will not parse). Stop the run so one bad stretch does not grind on, but arm
+        // nothing: there is no reason to hold back the next folder view.
         if (++consecutiveErrors >= PREFETCH_MAX_CONSECUTIVE_ERRORS) {
           console.log(`Body prefetch stopping for ${logAccount(account)} after ${consecutiveErrors} consecutive errors`);
           return;
