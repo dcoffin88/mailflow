@@ -2843,6 +2843,17 @@ describe('prefetchFolderBodies — stops instead of hammering a refusing provide
 
     expect(mgr._noteConnectionRefusal).not.toHaveBeenCalled();
     expect(mgr._connectCooldown.has('acc-1')).toBe(false);
+    // It IS recorded, on the backoff that gates background connections.
+    expect(mgr._secondaryCooldown.has('acc-1')).toBe(true);
+  });
+
+  it('skips the run entirely while secondary connections are backed off', async () => {
+    const mgr = arrange(() => new Error('unused'));
+    mgr._secondaryCooldown.set('acc-1', { until: Date.now() + 30000, failures: 1 });
+
+    await mgr.prefetchFolderBodies('acc-1', UIDS.map(u => `m-${u}`));
+
+    expect(mgr.fetchMessageBody).not.toHaveBeenCalled();
   });
 
   it('aborts after three consecutive failures that are not phrased as refusals', async () => {
@@ -2872,5 +2883,110 @@ describe('prefetchFolderBodies — stops instead of hammering a refusing provide
 
     // Alternating failure/success never reaches three in a row, so every message is attempted.
     expect(mgr.fetchMessageBody).toHaveBeenCalledTimes(UIDS.length);
+  });
+});
+
+// ── Secondary-connection backoff (#474) ──────────────────────────────────────
+//
+// A provider can accept the sync connection while refusing additional concurrent logins.
+// Yahoo does, and #474's logs show the consequence: the folder-status connect is refused
+// and arms 30s, the next successful sync tick clears the counter as "healthy again", and
+// the following refusal is once more refusal #1. The backoff oscillates at the base delay
+// and never reaches one long enough for the provider to recover.
+describe('secondary connection backoff (#474)', () => {
+  const account = { id: 'acc-1', user_id: 'u1', imap_host: 'imap.mail.yahoo.com' };
+  let mgr;
+  beforeEach(() => {
+    mgr = new ImapManager({ clients: new Set() });
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('escalates even though live sync keeps succeeding (the reported loop)', () => {
+    const delays = [];
+    for (let cycle = 0; cycle < 4; cycle++) {
+      delays.push(mgr._noteSecondaryRefusal(account));
+      // A successful sync tick: this is the line that used to wipe the counter.
+      mgr._connectCooldown.delete(account.id);
+    }
+    expect(delays).toEqual([...delays].sort((a, b) => a - b));
+    expect(delays[3]).toBeGreaterThan(delays[0]);
+    expect(mgr._secondaryCooldown.get(account.id).failures).toBe(4);
+  });
+
+  it('is not cleared by the live-sync cooldown being cleared', () => {
+    mgr._noteSecondaryRefusal(account);
+    mgr._connectCooldown.delete(account.id);
+    mgr.clearConnectCooldown(account.id);
+    expect(mgr._secondaryCooldown.has(account.id)).toBe(true);
+  });
+
+  // Drives the real _withCountClient rather than calling the helper, so the wiring is what
+  // is under test. Calling _clearSecondaryCooldown directly passed even with the call site
+  // deleted, which proved nothing.
+  describe('_withCountClient wiring', () => {
+    function arrangeConnect(connectImpl) {
+      ImapFlow.mockImplementation(function () {
+        const client = new EventEmitter();
+        client.connect = vi.fn(connectImpl);
+        client.logout = vi.fn(() => Promise.resolve());
+        client.close = vi.fn();
+        return client;
+      });
+      getConnectionPolicy.mockResolvedValue({ allowPrivateHosts: true, allowInsecureTls: true });
+      resolveForConnection.mockResolvedValue({ host: '127.0.0.1', addresses: ['127.0.0.1'], servername: null });
+      query.mockResolvedValue({ rows: [{ ...account, enabled: true }] });
+      // ImapFlow is a module-level mock shared by every test in this file, so its call
+      // history is not ours until we clear it.
+      ImapFlow.mockClear();
+    }
+
+    it('clears the secondary backoff when the connection succeeds', async () => {
+      arrangeConnect(() => Promise.resolve());
+      // An expired entry: not blocking any more, but the failure count is still standing.
+      mgr._secondaryCooldown.set(account.id, { until: Date.now() - 1, failures: 3 });
+
+      const result = await mgr._withCountClient(account, async () => 'ok');
+
+      expect(result).toBe('ok');
+      expect(mgr._secondaryCooldown.has(account.id)).toBe(false);
+    });
+
+    it('arms the SECONDARY backoff on a refusal, never the live-sync one', async () => {
+      arrangeConnect(() => Promise.reject(Object.assign(new Error('Command failed'), {
+        responseText: 'AUTHENTICATE Server error - Please try again later',
+        serverResponseCode: 'UNAVAILABLE',
+      })));
+
+      await expect(mgr._withCountClient(account, async () => 'ok')).rejects.toThrow();
+
+      expect(mgr._secondaryCooldown.get(account.id)?.failures).toBe(1);
+      expect(mgr._connectCooldown.has(account.id)).toBe(false);
+    });
+
+    it('refuses to open while a backoff is active', async () => {
+      arrangeConnect(() => Promise.resolve());
+      mgr._secondaryCooldown.set(account.id, { until: Date.now() + 30000, failures: 1 });
+
+      await expect(mgr._withCountClient(account, async () => 'ok'))
+        .rejects.toThrow(/cooldown active/i);
+      expect(ImapFlow).not.toHaveBeenCalled();
+    });
+  });
+
+  it('blocks secondary work while EITHER backoff is active', () => {
+    expect(mgr._secondaryConnectBlocked(account.id)).toBeNull();
+
+    mgr._connectCooldown.set(account.id, { until: Date.now() + 30000, failures: 1 });
+    expect(mgr._secondaryConnectBlocked(account.id)).toBeTruthy();
+
+    mgr._connectCooldown.delete(account.id);
+    mgr._secondaryCooldown.set(account.id, { until: Date.now() + 30000, failures: 1 });
+    expect(mgr._secondaryConnectBlocked(account.id)).toBeTruthy();
+  });
+
+  it('does not block once a backoff has expired', () => {
+    mgr._secondaryCooldown.set(account.id, { until: Date.now() - 1, failures: 9 });
+    expect(mgr._secondaryConnectBlocked(account.id)).toBeNull();
   });
 });
