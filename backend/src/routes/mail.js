@@ -7,6 +7,7 @@ import { query } from '../services/db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { imapManager } from '../index.js';
 import { extractImapError } from '../services/imapError.js';
+import { isConnectionRefusal } from '../services/imapManager.js';
 import { sanitizeEmail, stripEmailHead, hasRemoteImages, blockRemoteImages, rewriteEbayImageserUrls, rewriteAnchorHrefs } from '../services/emailSanitizer.js';
 import { snippetFromBody, decodeMimeWords, parseRawHeaders, buildHeadersFromMessage } from '../services/messageParser.js';
 import { resolveTrashFolder, resolveAllTrashPaths, resolveAllDraftsPaths, resolveArchiveFolder, isAllMailFolder, resolveSpamFolder, resolveAllSpamPaths, getDeleteStrategy, adjustFolderCounts, fanOutReadToSiblings, fanOutStarToSiblings, fanOutBulkReadToSiblings } from '../utils/mailUtils.js';
@@ -516,6 +517,16 @@ router.get('/messages/:id/body', async (req, res) => {
     }
     // Our own connection budget, not the provider's. Saying so beats a generic 500:
     // the account is busy, the request is worth retrying, and nothing is broken.
+    // The provider itself is refusing additional connections (Yahoo's per-account session
+    // ceiling, #474). Distinct from poolExhausted below, which is OUR budget: here nothing
+    // MailFlow does right now will make the request succeed, so say what is happening and
+    // that MailFlow is already backing off, instead of the raw server string.
+    if (err.providerRefusing || isConnectionRefusal(msg)) {
+      return res.status(503).json({
+        error: 'The mail server is limiting connections for this account. MailFlow is backing off and will retry automatically; please try again shortly.',
+        providerLimited: true,
+      });
+    }
     if (err.poolExhausted) {
       return res.status(503).json({
         error: 'This account is busy with other mail operations. Please try again in a moment.',

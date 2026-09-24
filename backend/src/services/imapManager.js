@@ -883,6 +883,15 @@ const PROVIDERS = {
     speculativeFetch: false,
     skipFolderPatterns: [],
     skipFolderNames: [],
+    // Yahoo enforces a small per-account session ceiling rather than a rate limit: a fresh
+    // account with a fresh app password had its FIRST secondary login refused with
+    // [UNAVAILABLE] while the primary session worked fine (#474, reporter's isolated
+    // instance). Thunderbird hit the same wall (Mozilla bug 1727971, "didn't like more
+    // than 3 connections" while TB opened 5) and fixed it by opening fewer. So: one body
+    // connection instead of four, and no startup pre-warm, whose only job is to open a
+    // connection early, which is exactly what this provider punishes.
+    poolSize: 1,
+    poolPrewarm: false,
   },
   apple: {
     // iCloud is permissive — large batches, short delay.
@@ -1120,6 +1129,22 @@ export function connectStaggerFor(profile, accountCount) {
   const base = profile?.connectStaggerMs ?? 200;
   const factor = Math.min(1 + Math.max(accountCount, 0) / 25, 2);
   return Math.round(base * factor);
+}
+
+// Whether an account's pool holds a connected client that nothing is using: work that must
+// not open a NEW login (a body click during a provider refusal window, #474) may still run
+// over one of these. Takes the pools map as an argument so it is unit-testable. Pure.
+// Whether connectAccount should open a pool connection ahead of the first click. Skipped for
+// providers whose body fetches bypass the pool (preferFreshBodyFetch) and for providers that
+// punish early extra logins (poolPrewarm: false, e.g. Yahoo's session ceiling, #474). Pure.
+export function shouldPrewarmPool(profile) {
+  return !profile?.preferFreshBodyFetch && profile?.poolPrewarm !== false;
+}
+
+export function hasIdlePooledClient(pools, accountId) {
+  const pool = pools.get(accountId);
+  if (!pool) return false;
+  return pool.clients.some(c => c && c.usable !== false && !pool.inUse.has(c));
 }
 
 // Per-account connection pool for body fetches — avoids TLS handshake on every click
@@ -1450,7 +1475,11 @@ export async function acquirePooledClient(account) {
   // refresh, a host resolve and a connect, so callers arriving together all pass the check
   // before any of them has pushed. Measured at 12 sockets against a POOL_SIZE of 4. The
   // ceiling is the safety property #474 introduced, so it has to hold under concurrency.
-  if (pool.clients.length + pool.pending < POOL_SIZE) {
+  // Per-provider clamp. Yahoo refuses logins past a small per-account session ceiling
+  // (#474), so a provider profile may cap its pool below the global size; anything the
+  // clamp turns away waits in the queue below exactly like a full pool.
+  const poolCap = Math.min(POOL_SIZE, providerProfile(account).poolSize ?? POOL_SIZE);
+  if (pool.clients.length + pool.pending < poolCap) {
     pool.pending += 1;
     try {
       const freshAccount = await ensureFreshToken(account);
@@ -2306,7 +2335,7 @@ export class ImapManager {
       // PurelyMail): there it only opens an unused connection on a connection-sensitive
       // server during the startup backfill window, which is exactly the pressure we're
       // trying to reduce.
-      if (!providerProfile(account).preferFreshBodyFetch) {
+      if (shouldPrewarmPool(providerProfile(account))) {
         setImmediate(() => {
           acquirePooledClient(account)
             .then(c => releasePooledClient(account, c))
@@ -4049,6 +4078,16 @@ export class ImapManager {
   async backfillMessages(account, folder = 'INBOX') {
     const backfillKey = `${account.id}:${folder}`;
     if (this.backfillRunning.has(backfillKey)) return;
+    // Backfill opens its own login per run, so it honors the secondary backoff like the
+    // other background consumers. Without this, backfillAllFolders walked every folder
+    // while the provider was refusing, one doomed LOGIN each (#474: eight folders, eight
+    // refusals inside a minute on a provider whose ceiling was already the problem). The
+    // skipped folder is picked up by the next scheduled backfill once the backoff clears.
+    const blocked = this._secondaryConnectBlocked(account.id);
+    if (blocked) {
+      logger.debug(`Backfill skipped for ${logAccount(account)}/${folder}: secondary backoff ${Math.round((blocked.until - Date.now()) / 1000)}s`);
+      return;
+    }
     this.backfillRunning.add(backfillKey);
 
     // Spread into a local copy so per-run mutations (e.g. batchSize reduction on rate-limit)
@@ -4471,7 +4510,12 @@ export class ImapManager {
       // Error('Command failed'). #474 reported screens of exactly that from this line, with
       // the server's own explanation discarded. Reported again after v3.5.3, because this
       // site was missed when the other log sites were converted.
-      console.error(`Backfill failed for ${logAccount(account)}/${folder}:`, extractImapError(err));
+      const detail = extractImapError(err);
+      console.error(`Backfill failed for ${logAccount(account)}/${folder}:`, detail);
+      // A refusal (or Yahoo's throttle-shaped AUTHENTICATE rejection) arms the shared
+      // secondary backoff, and the entry guard above then stops the REST of the folder walk
+      // for this run instead of paying one refused login per remaining folder.
+      if (isConnectionRefusal(detail) || isAuthFailure(detail)) this._noteSecondaryRefusal(account);
     } finally {
       if (bfClient) { try { bfClient.close(); } catch { /* already disconnected */ } }
       this.backfillRunning.delete(backfillKey);
@@ -4787,7 +4831,7 @@ export class ImapManager {
             consecutiveErrors = 0;
           } catch (err) {
             consecutiveErrors++;
-            console.error(`Snippet indexer batch error ${logAccount(account)}/${folder}:`, err.message);
+            console.error(`Snippet indexer batch error ${logAccount(account)}/${folder}:`, extractImapError(err));
             // Connection refusal = the provider is at its per-host/per-IP connection limit
             // (iCloud especially, or many accounts on one server, right after a startup backfill
             // burst). Reopening a fresh connection to retry would only pile on more pressure and
@@ -4822,7 +4866,7 @@ export class ImapManager {
       console.log(`Snippet indexer complete for ${logAccount(account)} (${batchCount} batches)`);
     } catch (err) {
       failed = true;
-      console.error(`Snippet indexer error ${logAccount(account)}:`, err.message);
+      console.error(`Snippet indexer error ${logAccount(account)}:`, extractImapError(err));
     } finally {
       // close(), not logout(): the per-host slot below is released only after this, so a
       // hung logout would stop background work for every account on the host.
@@ -5209,6 +5253,19 @@ export class ImapManager {
   // Auto-retries once on transient connection errors (stale pool connection, NAT
   // timeout, half-open TCP, etc.) so a single click is enough in all common cases.
   async fetchMessageBody(account, uid, folder) {
+    // While the provider is refusing secondary logins, a body click can only succeed over a
+    // session that already exists. If the pool holds an idle client, use it (no new LOGIN);
+    // otherwise fail fast with a typed error the route turns into a clear 503, instead of
+    // paying one refused login now and one more on the fresh-login retry (#474: this is the
+    // red raw-error box the reporter screenshotted). The wording deliberately does not
+    // match isConnectionRefusal, so surfacing it can never re-arm the backoff it reports.
+    const blocked = this._secondaryConnectBlocked(account.id);
+    if (blocked && !hasIdlePooledClient(connectionPools, account.id)) {
+      const gateErr = new Error('Mail server is limiting connections for this account');
+      gateErr.providerRefusing = true;
+      gateErr.retryAfterMs = Math.max(0, blocked.until - Date.now());
+      throw gateErr;
+    }
     // Inner fetch — called up to twice. `acquire` selects how the connection is obtained:
     // the first attempt uses the pool (withFreshClient); the retry uses a genuinely fresh
     // login (withFreshLogin) so a frozen/half-open pooled connection can't hang or return
