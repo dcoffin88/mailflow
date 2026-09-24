@@ -3154,7 +3154,7 @@ describe('yahoo session budget (#474)', () => {
     expect(mgr.backfillRunning.size).toBe(0);           // and left no stuck guard behind
   });
 
-  it('backfill: a refused login arms the backoff, so the folder walk stops paying per folder', async () => {
+  it('backfill: a refusal reaching its catch arms the backoff, so the folder walk stops paying per folder', async () => {
     const mgr = new ImapManager({ clients: new Set() });
     const account = freshYahoo();
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -3222,5 +3222,77 @@ describe('yahoo session budget (#474)', () => {
     const broken = { usable: false };
     pools.set('acct2', { clients: [broken], inUse: new Set(), waiters: [], pending: 0 });
     expect(hasIdlePooledClient(pools, 'acct2')).toBe(false);      // dead transport is not idle
+  });
+});
+
+// ── The gate's bypass and retry, driven end to end (review of d3597f5) ───────────────────
+//
+// The review found the real hole above the acquire race: the entry gate could admit a call
+// to reuse an idle pooled session, and the transient-failure retry then opened a fresh
+// LOGIN anyway, while the backoff was armed. It also noted hasIdlePooledClient was only
+// unit-tested in isolation. These drive fetchMessageBody through the REAL pool.
+describe('fetchMessageBody under an armed backoff (#474)', () => {
+  let seq = 500;
+  function arrange() {
+    const account = { id: `acct-gate-${++seq}`, user_id: 'u1', imap_host: 'imap.mail.yahoo.com', email_address: 'y@example.test', auth_user: 'y', auth_pass: 'enc' };
+    ImapFlow.mockImplementation(function () {
+      const client = new EventEmitter();
+      client.usable = true;
+      client.connect = vi.fn(() => Promise.resolve());
+      client.logout = vi.fn(() => Promise.resolve());
+      client.close = vi.fn();
+      client.noop = vi.fn(() => Promise.resolve());
+      // ECONNRESET is in fetchMessageBody's isTransient list, so the failure genuinely
+      // reaches the retry decision. (A first draft used 'Socket timeout', which is NOT
+      // transient there: the no-retry test then passed without exercising the guard.)
+      client.getMailboxLock = vi.fn(() => Promise.reject(new Error('read ECONNRESET')));
+      return client;
+    });
+    getConnectionPolicy.mockResolvedValue({ allowPrivateHosts: true, allowInsecureTls: true });
+    resolveForConnection.mockResolvedValue({ host: '127.0.0.1', addresses: ['127.0.0.1'], servername: null });
+    query.mockReset();
+    query.mockResolvedValue({ rows: [account] });
+    ImapFlow.mockClear();
+    const mgr = new ImapManager({ clients: new Set() });
+    return { mgr, account };
+  }
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it('admits a blocked call over an IDLE pooled session (the bypass the gate exists for)', async () => {
+    const { mgr, account } = arrange();
+    releasePooledClient(account, await acquirePooledClient(account)); // pool now holds 1 idle
+    expect(ImapFlow).toHaveBeenCalledTimes(1);
+    mgr._secondaryCooldown.set(account.id, { until: Date.now() + 30000, failures: 1 });
+
+    const err = await mgr.fetchMessageBody(account, 42, 'INBOX').catch(e => e);
+
+    expect(err.providerRefusing).not.toBe(true);   // gate admitted it
+    expect(err.message).toMatch(/ECONNRESET/);     // it really ran over the pooled session
+    expect(ImapFlow).toHaveBeenCalledTimes(1);     // and opened NO new login, retry included
+  });
+
+  it('retries over a fresh LOGIN only when no backoff is armed', async () => {
+    const { mgr, account } = arrange();
+    releasePooledClient(account, await acquirePooledClient(account));
+    expect(ImapFlow).toHaveBeenCalledTimes(1);
+
+    const err = await mgr.fetchMessageBody(account, 42, 'INBOX').catch(e => e);
+
+    expect(err.message).toMatch(/ECONNRESET/);
+    expect(ImapFlow).toHaveBeenCalledTimes(2);     // pooled attempt + the fresh-login retry
+  });
+
+  it('keeps the poolExhausted flag through the error wrap, so the busy 503 can fire', async () => {
+    const { mgr, account } = arrange();
+    ImapFlow.mockImplementation(function () {
+      const client = new EventEmitter();
+      client.usable = true;
+      client.close = vi.fn();
+      client.logout = vi.fn(() => Promise.resolve());
+      client.connect = vi.fn(() => Promise.reject(Object.assign(new Error('IMAP connections busy, please retry'), { poolExhausted: true })));
+      return client;
+    });
+    const err = await mgr.fetchMessageBody(account, 42, 'INBOX').catch(e => e);
+    expect(err.poolExhausted).toBe(true);
   });
 });

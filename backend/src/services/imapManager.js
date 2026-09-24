@@ -5472,6 +5472,17 @@ export class ImapManager {
         /EPIPE/.test(detail)
       );
       if (isTransient) {
+        // No fresh-login retry while the secondary backoff is armed. The entry gate lets a
+        // call through during a refusal window only so it can REUSE an idle pooled session;
+        // retrying over a brand-new LOGIN is exactly the doomed request the gate exists to
+        // prevent, and it bypassed the gate entirely (review of d3597f5 rated this above
+        // the acquire race). Rethrow instead; the route maps refusals to the friendly 503.
+        if (this._secondaryConnectBlocked(account.id)) {
+          const wrapped = new Error(detail);
+          wrapped.imapError = true;
+          if (firstErr.poolExhausted) wrapped.poolExhausted = true;
+          throw wrapped;
+        }
         try {
           return await doFetch(withFreshLogin);
         } catch (retryErr) {
@@ -5485,11 +5496,16 @@ export class ImapManager {
           }
           const wrapped = new Error(retryDetail);
           wrapped.imapError = true;
+          if (retryErr.poolExhausted) wrapped.poolExhausted = true;
           throw wrapped;
         }
       }
       const wrapped = new Error(detail);
       wrapped.imapError = true;
+      // Wrapping in a fresh Error dropped this flag, so the route's "account is busy" 503
+      // never fired for body fetches and a pool timeout surfaced as a generic 500. Found in
+      // review; pre-existing, but poolSize 1 providers make it the common case.
+      if (firstErr.poolExhausted) wrapped.poolExhausted = true;
       throw wrapped;
     }
   }
