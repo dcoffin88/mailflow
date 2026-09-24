@@ -5872,7 +5872,14 @@ export class ImapManager {
     // forget, so this never blocks or breaks the copy.
     await pluginRegistry.runHook('afterLabelCopy', { mgr: this.pluginFacade, account, toFolder, fromFolder, srcUid: uid, newUid });
 
-    if (newUid == null) return null;
+    if (newUid == null) {
+      // Servers without UIDPLUS confirm COPY but cannot name its destination UID.
+      // Pull the target so ordinary folders (which have no label plugin hook)
+      // gain their local sibling row without waiting for the next backfill.
+      this.syncFolderOnDemand(account, toFolder)
+        .catch(err => console.warn(`Post-copy folder sync failed: ${err.message}`));
+      return null;
+    }
 
     await insertCopiedSibling(accountId, uid, fromFolder, toFolder, newUid);
     return newUid;
