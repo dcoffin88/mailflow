@@ -3,14 +3,14 @@ name: Publish Apps
 # Builds the native apps for a published release and attaches them to it.
 #
 # Signing is optional on every platform, so the same file works before and after any
-# certificate is bought. Without a certificate Windows ships unsigned and macOS ships ad-hoc
-# signed, and both cost the user an install-time warning.
+# certificate is bought. Without a certificate Windows and macOS both ship unsigned, and
+# both cost the user an install-time warning.
 #
-# macOS is ad-hoc signed rather than left unsigned. Skipping signing entirely leaves
-# Electron's prebuilt linker signatures, which do not seal the bundle. An ad-hoc build has
-# been installed on an Apple Silicon M1 from a browser download, so genuinely quarantined:
-# the first launch is refused, and allowing it once under System Settings >
-# Privacy & Security runs it normally thereafter.
+# An unsigned macOS build has been installed on an Apple Silicon M1 from a browser
+# download, so genuinely quarantined: the first launch is refused, and allowing it once
+# under System Settings > Privacy & Security runs it normally thereafter. That build
+# (dcoffin88's v3.5.1-beta8) skipped signing with `-c.mac.identity=null`; no ad-hoc
+# signed build has been installed anywhere yet.
 #
 # An install that cannot verify a download declines to auto-update, because
 # verifyPlatformSignature cannot pin the download to a publisher it does not have. Those
@@ -184,8 +184,8 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.signing.outputs.windows == 'signed' && 'true' || 'false' }}
 
       # macOS mirrors Windows: signed when a Developer ID certificate is configured,
-      # otherwise built unsigned and still published. An unsigned .dmg installs behind a
-      # "cannot be verified" prompt; it is not refused outright. The unsigned install
+      # otherwise built unsigned and still published. An unsigned .dmg installs behind
+      # Gatekeeper's allow-once prompt; it is not refused outright. The unsigned install
       # declines to auto-update, which canAutoInstallUpdates handles.
       - name: Resolve macOS signing mode
         id: mac-signing
@@ -243,23 +243,13 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
 
-      # Ad-hoc signed (`identity=-`), NOT unsigned. `identity=null` makes electron-builder skip
-      # signing entirely, leaving Electron's prebuilt linker signatures, which do not seal the
-      # bundle. A quarantined build like that reports "is damaged and can't be opened" on Apple
-      # Silicon, with no Open Anyway, so it is worse than useless. An ad-hoc signature seals the
-      # bundle and should give the milder "cannot be verified" prompt instead.
-      #
-      # Hardened runtime is off for this path: it is only required for notarization, which an
-      # ad-hoc build cannot have, and this is the configuration that has actually been built.
-      # Both flags are scoped to this step rather than package.json, so the signed path keeps
-      # the real identity and the hardened runtime that notarization requires.
-      #
-      # Confirmed on Apple Silicon rather than assumed: dcoffin88's v3.5.1-beta8 dmg, built
-      # from exactly this configuration, installs on an M1 after a browser download.
-      - name: Build ad-hoc signed macOS Electron package
+      # `identity=null` skips signing outright; it is the configuration installed on Apple
+      # Silicon (see the header). Ad-hoc signing (`identity=-`) waits for a tested install.
+      # Scoped to this step rather than package.json so the signed step keeps its identity.
+      - name: Build unsigned macOS Electron package
         if: matrix.os == 'macos-latest' && steps.mac-signing.outputs.mac == 'unsigned'
         working-directory: frontend
-        run: npm run electron:dist -- -c.mac.identity=- -c.mac.hardenedRuntime=false
+        run: npm run electron:dist -- -c.mac.identity=null
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
