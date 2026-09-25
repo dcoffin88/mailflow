@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { readFileSync } from 'fs';
 import { randomBytes, createHash, randomUUID } from 'crypto';
 import { Router } from 'express';
 import { query } from '../services/db.js';
@@ -122,6 +123,15 @@ function bodyToHtml(body, isHtml) {
   if (!isHtml) return textToHtml(body);
   return sanitizeComposeBody(body);
 }
+
+// Outgoing mail identifies its software, like every mainstream client does. Strict shared
+// hosting outbound filters (Bluehost's Cloudmark router, #492) treat the absence of any
+// X-Mailer or User-Agent as a botnet heuristic, and nodemailer 9 emits none by default
+// (verified against the bundled version: the header set matches the reporter's capture
+// exactly). Whether the missing header alone is what Bluehost drops on is unproven, since
+// the failing pair's headers cannot be captured; the declaration is standard regardless.
+const packageMeta = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf-8'));
+const MAILER_ID = `MailFlow ${(process.env.APP_VERSION || packageMeta.version || '').replace(/^v[.]?/, '')}`.trim();
 
 const router = Router();
 router.use(requireAuth);
@@ -295,6 +305,7 @@ router.post('/send', async (req, res) => {
     // Use a stable Message-ID so the SMTP copy and any IMAP APPEND reference the same message.
     const domain = fromEmail.split('@')[1] || 'mailflow.local';
     const mailOptions = {
+      xMailer: MAILER_ID,
       messageId: `<${randomBytes(16).toString('hex')}@${domain}>`,
       from: `${fromName} <${fromEmail}>`,
       ...(fromReplyTo ? { replyTo: fromReplyTo } : {}),
