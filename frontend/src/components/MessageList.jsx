@@ -25,7 +25,7 @@ import { selectedMessage, markMessageUnread } from '../utils/messageHotkeys.js';
 import { cancelScheduledMarkReadFor } from '../utils/markRead.js';
 import SenderAvatarImage from './SenderAvatarImage.jsx';
 import FolderPathLabel from './FolderPathLabel.jsx';
-import { folderMatchesQuery } from '../utils/folderDisplay.js';
+import { folderDisplayName, folderMatchesQuery } from '../utils/folderDisplay.js';
 import SpamBadge from './SpamBadge.jsx';
 import SpamExplainModal from './SpamExplainModal.jsx';
 import { shortcutBus } from '../utils/shortcutBus.js';
@@ -2780,7 +2780,7 @@ export default function MessageList() {
                     }
                     setShowLayoutPicker(v => !v);
                   }}
-                  title={t('messageList.changeLayout', 'Change layout')}
+                  title={t('messageList.changeLayout')}
                   style={{
                     background: showLayoutPicker ? 'var(--accent-dim)' : 'none',
                     border: `1px solid ${showLayoutPicker ? 'var(--accent)' : 'transparent'}`,
@@ -2829,7 +2829,7 @@ export default function MessageList() {
                           onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                         >
                           <span style={{ fontSize: 13, color: isActive ? 'var(--accent)' : 'var(--text-primary)', fontWeight: isActive ? 500 : 400, flex: 1 }}>
-                            {def.label}
+                            {t(def.labelKey, def.label)}
                           </span>
                           {isActive && (
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5">
@@ -2944,7 +2944,7 @@ export default function MessageList() {
                   }
                   setShowLayoutPicker(v => !v);
                 }}
-                title={t('messageList.changeLayout', 'Change layout')}
+                title={t('messageList.changeLayout')}
                 style={{
                   background: showLayoutPicker ? 'var(--accent-dim)' : 'none',
                   border: `1px solid ${showLayoutPicker ? 'var(--accent)' : 'transparent'}`,
@@ -2992,7 +2992,7 @@ export default function MessageList() {
                         onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                       >
                         <span style={{ fontSize: 13, color: isActive ? 'var(--accent)' : 'var(--text-primary)', fontWeight: isActive ? 500 : 400, flex: 1 }}>
-                          {def.label}
+                          {t(def.labelKey, def.label)}
                         </span>
                         {isActive && (
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5">
@@ -3373,7 +3373,7 @@ export default function MessageList() {
                   </svg>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {folder.name || folder.path}
+                      {folderDisplayName(folder, t)}
                     </div>
                     {folder.accountName && (
                       <div style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

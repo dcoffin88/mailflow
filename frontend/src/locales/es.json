@@ -371,6 +371,29 @@
       "promotion": "Promociones",
       "automated": "Automático",
       "social": "Social"
+    },
+    "changeLayout": "Cambiar diseño",
+    "layouts": {
+      "focused": {
+        "label": "Enfocado",
+        "description": "Panel de lista mínimo, área de lectura máxima"
+      },
+      "compact": {
+        "label": "Compacto",
+        "description": "Filas densas: más mensajes a la vez"
+      },
+      "comfortable": {
+        "label": "Cómodo",
+        "description": "Filas amplias con espaciado generoso para ojear"
+      },
+      "wide": {
+        "label": "Ancho",
+        "description": "Lista amplia con asuntos y vistas previas más largos"
+      },
+      "vertical": {
+        "label": "División vertical",
+        "description": "Lista de mensajes sobre el panel de lectura"
+      }
     }
   },
   "lockScreen": {
@@ -1727,5 +1750,13 @@
     "copyFailed": "Error al copiar",
     "generating": "Generando informe…",
     "error": "No se pudo generar el informe."
+  },
+  "folders": {
+    "inbox": "Bandeja de entrada",
+    "sent": "Enviados",
+    "drafts": "Borradores",
+    "trash": "Papelera",
+    "spam": "Spam",
+    "archive": "Archivo"
   }
 }

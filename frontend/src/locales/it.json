@@ -371,6 +371,29 @@
       "promotion": "Promozioni",
       "automated": "Automatico",
       "social": "Social"
+    },
+    "changeLayout": "Cambia disposizione",
+    "layouts": {
+      "focused": {
+        "label": "Concentrato",
+        "description": "Pannello elenco minimo, area di lettura massima"
+      },
+      "compact": {
+        "label": "Compatto",
+        "description": "Righe dense — più messaggi in una volta"
+      },
+      "comfortable": {
+        "label": "Comodo",
+        "description": "Righe spaziose con margini generosi per la lettura"
+      },
+      "wide": {
+        "label": "Largo",
+        "description": "Elenco ampio con oggetti e anteprime più lunghi"
+      },
+      "vertical": {
+        "label": "Divisione verticale",
+        "description": "Elenco messaggi sopra il riquadro di lettura"
+      }
     }
   },
   "lockScreen": {
@@ -1727,5 +1750,13 @@
     "copyFailed": "Copia non riuscita",
     "generating": "Generazione del report…",
     "error": "Impossibile generare il report."
+  },
+  "folders": {
+    "inbox": "Posta in arrivo",
+    "sent": "Inviati",
+    "drafts": "Bozze",
+    "trash": "Cestino",
+    "spam": "Spam",
+    "archive": "Archivio"
   }
 }
