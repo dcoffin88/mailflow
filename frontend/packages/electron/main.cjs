@@ -407,13 +407,16 @@ function sendUpdateStatus(payload) {
   mainWindow.webContents.send(UPDATE_STATUS_CHANNEL, payload);
 }
 
-function showInAppNotification({ title = '', message = '', type = 'info', actionLabel = '', action = '', actionUrl = '', persistent = false }) {
+// The injected toast stands in for the React bridge, so it stands down when the flag named
+// by suppressWhen is set. The default is the bridge itself; a caller whose notification the
+// bridge only learned to render later names the narrower flag for that.
+function showInAppNotification({ title = '', message = '', type = 'info', actionLabel = '', action = '', actionUrl = '', persistent = false, suppressWhen = '__mailflowNativeBridgeReady' }) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
   const payload = JSON.stringify({ title, message, type, actionLabel, action, actionUrl, persistent });
   mainWindow.webContents.executeJavaScript(`
     (() => {
-      if (window.__mailflowNativeBridgeReady) return;
+      if (window[${JSON.stringify(suppressWhen)}]) return;
 
       const notification = ${payload};
       const id = 'mailflow-electron-toasts';
@@ -718,14 +721,16 @@ function notifyUpdateAvailable(verbose = true, { autoDownload = true } = {}) {
     },
   });
 
-  // An install that cannot verify a download gets a notification carrying a link to the
-  // release, because there is nothing else it can offer. This runs even when the check was
-  // not user-initiated: the renderer only reacts to `downloaded`, so a background check
-  // would otherwise be silent and the user would never learn an update exists.
+  // An install that cannot verify a download is offered the release page instead, since
+  // there is nothing else to offer. A bridge that handles canAutoInstall renders that from
+  // the status above and sets __mailflowNativeUpdateLinkReady; this toast covers the rest.
+  // The desktop shell runs whatever frontend the server serves, so a server older than that
+  // bridge mounts one that ignores `available`, and without the toast those installs would
+  // never learn an update exists, not even from Help > Check for Updates.
   if (!autoDownload) {
     const releaseVersion = updateInfo?.releaseVersion;
 
-    // Background checks notify once per release. A user-requested check always answers.
+    // A user-requested check always answers; background checks answer once per release.
     if (verbose || releaseVersion !== lastNotifiedManualUpdateVersion) {
       showInAppNotification({
         title: 'Update Available',
@@ -735,6 +740,7 @@ function notifyUpdateAvailable(verbose = true, { autoDownload = true } = {}) {
         action: 'open-update-release',
         actionUrl: updateInfo.releaseUrl,
         persistent: true,
+        suppressWhen: '__mailflowNativeUpdateLinkReady',
       });
 
       lastNotifiedManualUpdateVersion = releaseVersion;

@@ -82,9 +82,8 @@ export default function ElectronNotificationBridge() {
     if (!nativeBridgeReady) return undefined;
     const unsubscribe = window.mailflowNative?.updates?.onStatus?.((status) => {
       // An install that cannot verify a download has nothing to install, so it is offered the
-      // release page instead. This has to be handled here: the main process has a fallback
-      // toast, but it deliberately does nothing once this bridge is mounted, so without this
-      // branch the check is silent and the user never learns an update exists.
+      // release page instead. The main process shows its own toast for this only until a
+      // bridge that handles it is mounted, which __mailflowNativeUpdateLinkReady signals.
       if (status?.type === 'available' && status?.data?.canAutoInstall === false) {
         const releaseUrl = status?.data?.releaseUrl;
         addNotification({
@@ -166,8 +165,10 @@ export default function ElectronNotificationBridge() {
         },
       });
     });
+    if (typeof unsubscribe === 'function') window.__mailflowNativeUpdateLinkReady = true;
 
     return () => {
+      window.__mailflowNativeUpdateLinkReady = false;
       if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, [addNotification, nativeBridgeReady]);
