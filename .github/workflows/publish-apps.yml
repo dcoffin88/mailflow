@@ -31,7 +31,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release tag to build and attach to, for example v3.5.2."
+        description: "Release tag to build and attach to. It must already include this workflow's updater changes."
         required: true
         type: string
 
@@ -63,7 +63,12 @@ jobs:
       # A mistyped version would otherwise be created as a brand new release by
       # action-gh-release at the end, published as Latest, which every desktop install polls.
       # Failing here costs one job; getting it wrong reroutes everyone's updater.
-      - name: Verify release exists
+      #
+      # A release from before canAutoInstallUpdates is refused too. Its unsigned Windows and
+      # macOS installers would carry the old updater, which downloads every later release,
+      # rejects it as unverifiable and offers no link, so backfilling one strands whoever
+      # installs it.
+      - name: Verify release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -73,6 +78,14 @@ jobs:
           set -euo pipefail
           if ! gh release view "$VERSION" --repo "$GH_REPO" >/dev/null; then
             echo "::error::GitHub release '$VERSION' does not exist in '$GH_REPO'. Publish the release before running this workflow."
+            exit 1
+          fi
+          if ! gh api -H 'Accept: application/vnd.github.raw' "repos/$GH_REPO/contents/frontend/packages/electron/main.cjs?ref=$VERSION" > "$RUNNER_TEMP/main.cjs"; then
+            echo "::error::Could not read frontend/packages/electron/main.cjs at '$VERSION' (API error, or the tag predates the desktop app)."
+            exit 1
+          fi
+          if ! grep -q 'function canAutoInstallUpdates' "$RUNNER_TEMP/main.cjs"; then
+            echo "::error::Release '$VERSION' predates the update link for unsigned installs; its Windows and macOS installers could never update. Build a later release."
             exit 1
           fi
           echo "Release '$VERSION' exists."
