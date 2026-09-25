@@ -283,8 +283,9 @@ jobs:
             frontend/packages/release/*.exe
             frontend/packages/release/*.rpm
 
-  # Skipped, not failed, when no keystore is configured. The release job treats a skipped
-  # Android build as acceptable so the desktop artifacts still publish.
+  # Skipped, not failed, when no keystore is configured. The release job attaches the desktop
+  # installers whether this job is skipped, fails or succeeds; its APK and AAB join them when
+  # it succeeds.
   android:
     name: Android
     needs: setup
@@ -388,13 +389,12 @@ jobs:
     needs:
       - desktop
       - android
-    # `always()` is needed so a skipped Android build does not skip this job with it, but it
-    # also defeats the implicit "only if the dependencies succeeded", so both results are
-    # checked explicitly. A failed desktop build must still stop the release.
-    if: >-
-      !cancelled()
-      && needs.desktop.result == 'success'
-      && (needs.android.result == 'success' || needs.android.result == 'skipped')
+    # `!cancelled()` rather than the implicit "only if the dependencies succeeded", so a
+    # skipped or failed Android build does not withhold the desktop installers: the keystore
+    # is exercised for the first time on the first release, and a failure there is still a
+    # failed run, re-run to attach its files. A failed desktop build must still stop the
+    # release.
+    if: ${{ !cancelled() && needs.desktop.result == 'success' }}
     runs-on: ubuntu-latest
 
     steps:
