@@ -151,7 +151,10 @@ jobs:
 
       - name: Set app version
         working-directory: frontend
-        run: npm run app:version -- "${{ steps.app-version.outputs.version }}" "${{ github.run_number }}"
+        env:
+          APP_VERSION: ${{ steps.app-version.outputs.version }}
+          APP_VERSION_CODE: ${{ github.run_number }}
+        run: npm run app:version
 
       # Signing is optional rather than required: with no certificate configured the
       # Windows job produces a correct but UNSIGNED installer. That is a deliberate
@@ -346,7 +349,10 @@ jobs:
 
       - name: Set app version
         working-directory: frontend
-        run: npm run app:version -- "${{ steps.app-version.outputs.version }}" "${{ github.run_number }}"
+        env:
+          APP_VERSION: ${{ steps.app-version.outputs.version }}
+          APP_VERSION_CODE: ${{ github.run_number }}
+        run: npm run app:version
 
       - name: Prepare Android release signing
         shell: bash
