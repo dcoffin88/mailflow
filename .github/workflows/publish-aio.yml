@@ -1,0 +1,157 @@
+name: Publish AIO to GHCR and Docker Hub
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: Rebuild even if already published
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths:
+      - 'aio/**'
+      - '.github/workflows/publish-aio.yml'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-mailflow-aio
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check latest stable upstream release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$(gh api repos/maathimself/mailflow/releases/latest --jq '.tag_name')"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unexpected release tag: $tag" >&2
+            exit 1
+          fi
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "minor=${version%.*}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Determine whether a build is needed
+        id: check
+        env:
+          GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/mailflow-aio
+          DOCKERHUB_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/mailflow-aio
+          VERSION: ${{ steps.release.outputs.version }}
+          FORCE_BUILD: ${{ inputs.force_build || 'false' }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == push || "$FORCE_BUILD" == true ]]; then
+            echo "Build requested by $EVENT_NAME."
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ghcr_exists=false
+          dockerhub_exists=false
+          if docker buildx imagetools inspect \
+            "${GHCR_IMAGE}:${VERSION}" >/dev/null 2>&1; then
+            ghcr_exists=true
+          fi
+          if docker buildx imagetools inspect \
+            "${DOCKERHUB_IMAGE}:${VERSION}" >/dev/null 2>&1; then
+            dockerhub_exists=true
+          fi
+          echo "GHCR published: $ghcr_exists"
+          echo "Docker Hub published: $dockerhub_exists"
+          if [[ "$ghcr_exists" == true && "$dockerhub_exists" == true ]]; then
+            echo "Version ${VERSION} already published to both registries."
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+          else
+            echo "Version ${VERSION} missing from at least one registry."
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out AIO build files from this fork
+        if: steps.check.outputs.build == 'true'
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          path: custom
+          persist-credentials: false
+
+      - name: Check out upstream release
+        if: steps.check.outputs.build == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: maathimself/mailflow
+          ref: ${{ steps.release.outputs.tag }}
+          path: upstream
+          persist-credentials: false
+
+      - name: Assemble upstream source and custom AIO files
+        if: steps.check.outputs.build == 'true'
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p upstream/aio
+          cp custom/aio/Dockerfile custom/aio/entrypoint.sh upstream/aio/
+          echo "sha=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          test -f upstream/backend/package-lock.json
+          test -f upstream/frontend/package-lock.json
+
+      - name: Set up QEMU
+        if: steps.check.outputs.build == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build and push AIO to GHCR and Docker Hub
+        if: steps.check.outputs.build == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./upstream
+          file: ./upstream/aio/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/mailflow-aio:${{ steps.release.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/mailflow-aio:${{ steps.release.outputs.minor }}
+            ghcr.io/${{ github.repository_owner }}/mailflow-aio:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/mailflow-aio:${{ steps.release.outputs.version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/mailflow-aio:${{ steps.release.outputs.minor }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/mailflow-aio:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.sha }}
+          provenance: false
+          build-args: |
+            BUILD_SHA=${{ steps.source.outputs.sha }}
+            APP_VERSION=${{ steps.release.outputs.tag }}
+            VITE_EMAIL_DIV_RENDER=false
+          cache-from: type=gha,scope=mailflow-aio
+          cache-to: type=gha,mode=max,scope=mailflow-aio
