@@ -17,6 +17,8 @@ import { TextAlign } from '@tiptap/extension-text-align';
 import Image from '@tiptap/extension-image';
 import { ComposerTable, ComposerTableCell, ComposerTableHeader, createTableContent } from '../utils/editorTable.js';
 import TableInsertMenu from './TableInsertMenu.jsx';
+import ComposerContextMenu from './ComposerContextMenu.jsx';
+import { Superscript, Subscript, ParagraphIndent } from '../utils/editorFormatting.js';
 import { TableRow } from '@tiptap/extension-table-row';
 import { ComposerLink } from '../utils/editorLink.js';
 import { PasteWithoutPageColors } from '../utils/editorPaste.js';
@@ -382,6 +384,8 @@ export default function ComposeModal() {
   const idempotencyKeyRef = useRef(null);
   const replyTypeRef = useRef(null);
   const textareaRef = useRef(null);
+  const sourceTextareaRef = useRef(null);
+  const [contextToolRequest, setContextToolRequest] = useState(null);
   const fileInputRef = useRef(null);
   const imageInputRef = useRef(null);
   const signatureRef = useRef(null);
@@ -441,6 +445,9 @@ export default function ComposeModal() {
       FontFamily,
       BackgroundColor,
       FontSize,
+      Superscript,
+      Subscript,
+      ParagraphIndent,
       PasteWithoutPageColors,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       ResizableImage.configure({ inline: true, allowBase64: true }),
@@ -1900,6 +1907,23 @@ export default function ComposeModal() {
     </button>
   ) : null);
 
+  const toggleHtmlSource = () => {
+    if (!htmlMode) { setHtmlSource(editor?.getHTML() ?? ''); setHtmlMode(true); }
+    else { editor?.commands.setContent(htmlSource, false); setHtmlMode(false); }
+  };
+  const renderComposerContextMenu = () => (
+    <ComposerContextMenu editor={editor} plain={plaintextEmail} htmlMode={htmlMode} disabled={sending}
+      textTargetRef={htmlMode ? sourceTextareaRef : textareaRef}
+      onTool={setContextToolRequest}
+      onAttach={() => fileInputRef.current?.click()} onImage={() => imageInputRef.current?.click()}
+      onPasteImage={insertImageIntoEditor}
+      signatureAvailable={!!(plaintextEmail ? plainSig : hasRichSignature)} signatureEnabled={signatureEnabled}
+      onSignature={() => { signatureToggledRef.current = true; setSignatureEnabled(on => !on); }}
+      onToggleHtml={toggleHtmlSource} aiEnabled={!!(aiStatus?.enabled && aiStatus?.features?.compose)} onAiAction={handleAiAction}
+      onError={message => addNotification({ type: 'error', title: message })}
+    />
+  );
+
   const modeLabel = isReply
     ? (replyAll ? t('compose.replyAll') : t('compose.reply'))
     : isForward ? t('compose.forward') : t('compose.newMessage');
@@ -2096,6 +2120,8 @@ export default function ComposeModal() {
         }}
       >
         <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} style={{ display: 'none' }} />
+        <input ref={imageInputRef} type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) insertImageIntoEditor(f); e.target.value = ''; }} style={{ display: 'none' }} />
+        {renderComposerContextMenu()}
         {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'center',
@@ -2374,6 +2400,8 @@ export default function ComposeModal() {
           ) : (
             <div className="tiptap-compose" style={{ flex: '1 0 auto', minHeight: 200, display: 'flex', flexDirection: 'column' }}>
               <RichToolbar editor={editor} onAttach={() => fileInputRef.current?.click()}
+                contextToolRequest={contextToolRequest}
+                onContextToolHandled={setContextToolRequest}
                 signatureControl={renderSignatureToggle()}
                 htmlMode={htmlMode}
                 onToggleHtml={() => {
@@ -2420,6 +2448,7 @@ export default function ComposeModal() {
               )}
               {htmlMode ? (
                 <textarea
+                  ref={sourceTextareaRef}
                   value={htmlSource}
                   onChange={e => setHtmlSource(e.target.value)}
                   spellCheck={false}
@@ -2785,6 +2814,7 @@ export default function ComposeModal() {
     >
       <input ref={fileInputRef} type="file" multiple onChange={handleFileSelect} style={{ display: 'none' }} />
       <input ref={imageInputRef} type="file" accept="image/*" onChange={e => { const f = e.target.files?.[0]; if (f) insertImageIntoEditor(f); e.target.value = ''; }} style={{ display: 'none' }} />
+      {renderComposerContextMenu()}
       {/* Title bar */}
       <div
         onPointerDown={handleTitleDragStart}
@@ -3001,6 +3031,8 @@ export default function ComposeModal() {
 
       {/* Toolbar — sits outside overflow container so dropdowns are never clipped */}
       {!plaintextEmail && <RichToolbar editor={editor} onAttach={() => fileInputRef.current?.click()} onInsertImage={() => imageInputRef.current?.click()}
+        contextToolRequest={contextToolRequest}
+        onContextToolHandled={setContextToolRequest}
         signatureControl={renderSignatureToggle()}
         htmlMode={htmlMode}
         onToggleHtml={() => {
@@ -3074,6 +3106,7 @@ export default function ComposeModal() {
           />
         ) : htmlMode ? (
           <textarea
+            ref={sourceTextareaRef}
             value={htmlSource}
             onChange={e => setHtmlSource(e.target.value)}
             spellCheck={false}
@@ -3592,10 +3625,12 @@ function ColorMenuSection({ title, colors, activeColor, onColor, onClear, clearL
   );
 }
 
-function RichToolbar({ editor, onAttach, onInsertImage, signatureControl, htmlMode, onToggleHtml, isMobile, aiEnabled, onAiAction, aiPanelOpen }) {
+function RichToolbar({ editor, onAttach, onInsertImage, signatureControl, htmlMode, onToggleHtml, isMobile, aiEnabled, onAiAction, aiPanelOpen, contextToolRequest, onContextToolHandled }) {
   const { t } = useTranslation();
   const uiScale = useUiScale();
   const savedSelectionRef = useRef(null);
+  const contextToolActionsRef = useRef(null);
+  const handledContextRequestRef = useRef(null);
   const [aiMenuPos, setAiMenuPos] = useState(null);
   const aiBtnRef = useRef(null);
   const aiMenuRef = useRef(null);
@@ -3644,10 +3679,10 @@ function RichToolbar({ editor, onAttach, onInsertImage, signatureControl, htmlMo
   useEffect(() => {
     if (!typeMenuPos && !emojiPos && !linkPos && !tablePos && !aiMenuPos) return;
     const handler = (e) => {
-      if (typeMenuPos && typeMenuBtnRef.current && !typeMenuBtnRef.current.contains(e.target) && typeMenuRef.current && !typeMenuRef.current.contains(e.target)) setTypeMenuPos(null);
-      if (emojiPos && emojiBtnRef.current && !emojiBtnRef.current.contains(e.target) && emojiPopRef.current && !emojiPopRef.current.contains(e.target)) setEmojiPos(null);
-      if (linkPos && linkBtnRef.current && !linkBtnRef.current.contains(e.target) && linkPopRef.current && !linkPopRef.current.contains(e.target)) setLinkPos(null);
-      if (tablePos && tableBtnRef.current && !tableBtnRef.current.contains(e.target) && tablePopRef.current && !tablePopRef.current.contains(e.target)) setTablePos(null);
+      if (typeMenuPos && !typeMenuBtnRef.current?.contains(e.target) && !typeMenuRef.current?.contains(e.target)) setTypeMenuPos(null);
+      if (emojiPos && !emojiBtnRef.current?.contains(e.target) && !emojiPopRef.current?.contains(e.target)) setEmojiPos(null);
+      if (linkPos && !linkBtnRef.current?.contains(e.target) && !linkPopRef.current?.contains(e.target)) setLinkPos(null);
+      if (tablePos && !tableBtnRef.current?.contains(e.target) && !tablePopRef.current?.contains(e.target)) setTablePos(null);
       if (aiMenuPos && aiBtnRef.current && !aiBtnRef.current.contains(e.target) && aiMenuRef.current && !aiMenuRef.current.contains(e.target)) setAiMenuPos(null);
     };
     document.addEventListener('mousedown', handler);
@@ -3678,6 +3713,17 @@ function RichToolbar({ editor, onAttach, onInsertImage, signatureControl, htmlMo
     } : {},
   });
 
+  useEffect(() => {
+    if (!editor || !contextToolRequest || handledContextRequestRef.current === contextToolRequest) return;
+    handledContextRequestRef.current = contextToolRequest;
+    onContextToolHandled?.(null);
+    editor.commands.setTextSelection(contextToolRequest.selection);
+    savedSelectionRef.current = contextToolRequest.selection;
+    const { x, y } = contextToolRequest;
+    const event = { preventDefault() {}, anchorRect: { left: x, right: x, top: y, bottom: y } };
+    contextToolActionsRef.current?.[contextToolRequest.action]?.(event);
+  }, [editor, contextToolRequest, onContextToolHandled]);
+
   if (!editor) return null;
 
   const saveSelection = () => {
@@ -3690,7 +3736,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, signatureControl, htmlMo
     e.preventDefault();
     if (typeMenuPos) { setTypeMenuPos(null); return; }
     saveSelection();
-    const r = typeMenuBtnRef.current.getBoundingClientRect();
+    const r = e.anchorRect || typeMenuBtnRef.current.getBoundingClientRect();
     const width = isMobile ? Math.min(268, window.innerWidth - 8) : 236;
     const left = Math.max(4, Math.min(r.left, window.innerWidth - width - 4));
     setTypeMenuPos({ top: r.bottom + 4, left, width });
@@ -3706,7 +3752,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, signatureControl, htmlMo
       ]);
       emojiPickerRef.current = { Picker, data };
     }
-    const r = emojiBtnRef.current.getBoundingClientRect();
+    const r = e.anchorRect || emojiBtnRef.current.getBoundingClientRect();
     const left = Math.max(4, Math.min(r.left, window.innerWidth - 220));
     const spaceBelow = window.innerHeight - r.bottom;
     const spaceAbove = r.top;
@@ -3719,7 +3765,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, signatureControl, htmlMo
   const openLink = (e) => {
     e.preventDefault();
     if (linkPos) { setLinkPos(null); return; }
-    const r = linkBtnRef.current.getBoundingClientRect();
+    const r = e.anchorRect || linkBtnRef.current.getBoundingClientRect();
     const left = Math.max(4, Math.min(r.left, window.innerWidth - 300));
     setLinkPos({ top: r.bottom + 4, left });
     setTypeMenuPos(null); setEmojiPos(null);
@@ -3749,7 +3795,7 @@ function RichToolbar({ editor, onAttach, onInsertImage, signatureControl, htmlMo
     e.preventDefault();
     if (tablePos) { setTablePos(null); return; }
     saveSelection();
-    const r = tableBtnRef.current.getBoundingClientRect();
+    const r = e.anchorRect || tableBtnRef.current.getBoundingClientRect();
     const left = Math.max(4, Math.min(r.left, window.innerWidth - 234 * uiScale - 4));
     const height = 326 * uiScale;
     const top = window.innerHeight - r.bottom >= height ? r.bottom + 4 : Math.max(4, r.top - height);
@@ -3789,6 +3835,8 @@ function RichToolbar({ editor, onAttach, onInsertImage, signatureControl, htmlMo
   const tb = (active, title, onMD, children) => (
     <TBtn key={title} active={active} title={title} onMouseDown={onMD}>{children}</TBtn>
   );
+
+  contextToolActionsRef.current = { font: openTypeMenu, emoji: openEmoji, link: openLink, table: openTable };
 
   const mtb = (active, title, onMD, children) => (
     <button key={title} title={title} onMouseDown={onMD} style={{ background: active ? 'var(--bg-hover)' : 'none', border: 'none', borderRadius: 4, padding: '6px 4px', color: active ? 'var(--accent)' : 'var(--text-secondary)', cursor: 'pointer', fontSize: 14, fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: 1, WebkitTapHighlightColor: 'transparent' }}>{children}</button>
