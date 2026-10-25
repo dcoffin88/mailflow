@@ -7,11 +7,51 @@
 </p>
 
 <p align="center">
-  <a href="#installation">Quick Start</a> ·
+  <a href="#all-in-one-aio-docker-images">AIO Docker</a> ·
+  <a href="#installation">Installation</a> ·
   <a href="#email-provider-setup">Setup Guide</a> ·
   <a href="#supporters">Support MailFlow</a> ·
   <a href="https://mailflow.sh/#roadmap">Roadmap</a>
 </p>
+
+## All-in-one (AIO) Docker images
+
+This repository maintains an **unofficial AIO packaging** of [upstream MailFlow](https://github.com/maathimself/mailflow). A scheduled GitHub Actions workflow checks for new stable upstream releases, checks out the upstream **release tag**, and builds the upstream backend and frontend into one container (Node.js + Nginx). The fork supplies the AIO Dockerfile and entrypoint; it does not replace upstream application development.
+
+AIO removes the need for separate frontend and backend containers. **PostgreSQL and Redis remain separate services.** Images are published for `linux/amd64` and `linux/arm64` to both registries:
+
+- GHCR: `ghcr.io/dcoffin88/mailflow-aio:latest`
+- Docker Hub: `dcoffin88/mailflow-aio:latest`
+
+The workflows also publish full-release and minor-version tags (for example, `1.2.3` and `1.2`). `latest` follows the latest stable upstream release the workflow successfully builds. The images are unofficial and not guaranteed to appear immediately when upstream releases.
+
+### Quick start — GHCR
+
+```sh
+curl -fsSLo compose.yaml https://raw.githubusercontent.com/dcoffin88/mailflow/main/docker-compose-aio.ghcr.yml
+curl -fsSLo .env https://raw.githubusercontent.com/dcoffin88/mailflow/main/.env.example
+# Edit .env: at minimum configure DB_PASSWORD, SESSION_SECRET, APP_URL, and other required upstream settings.
+docker compose up -d
+```
+
+### Quick start — Docker Hub
+
+```sh
+curl -fsSLo compose.yaml https://raw.githubusercontent.com/dcoffin88/mailflow/main/docker-compose-aio.dockerhub.yml
+curl -fsSLo .env https://raw.githubusercontent.com/dcoffin88/mailflow/main/.env.example
+# Edit .env before starting.
+docker compose up -d
+```
+
+Set `MAILFLOW_VERSION=1.2.3` in `.env` to pin an available published version instead of using `latest`.
+
+**Behind an existing reverse proxy:** set `APP_HTTP_PORT=7280` (or your preferred host port), ensure ports 80/443 do not conflict with other services (set `APP_PORT=8443` if needed), and set `NGINX_TLS=off` if TLS terminates at the proxy. Forward your proxy to the HTTP port. Do not enable the optional Caddy profile.
+
+**With included Caddy:** set `DOMAIN`, `ACME_EMAIL`, `APP_URL`, `APP_PORT=8443`, and `APP_HTTP_PORT=8080` in `.env` to avoid host port conflicts, then run `docker compose --profile https up -d`. Caddy terminates HTTPS and proxies to `aio:80`. Ensure DNS and public ports 80/443 are configured appropriately.
+
+**Data persistence:** the examples use named `postgres_data` and `redis_data` volumes. If migrating an existing installation that uses `./db` and `./redis` bind mounts, **retain those original volume mappings** or migrate the data first. Simply switching the volume declarations will start with a different data directory. Back up PostgreSQL before upgrading MailFlow because upstream may run database migrations on startup.
+
+The AIO startup and Nginx configuration are custom packaging and should be tested before replacing a working deployment. This is not an official upstream image.
 
 ## Licensing
 
@@ -118,11 +158,26 @@ with GTD off behave exactly as before.
 
 ## Installation
 
-There are three ways to run MailFlow. The pre-built image method is recommended for most users.
+There are four ways to run MailFlow:
+ - All-in-One (AIO) Docker image — Unofficial community-maintained image combining the frontend and backend into one container. Available from GHCR and Docker Hub.
+ - Official pre-built Docker images — Separate frontend and backend containers maintained by upstream MailFlow.
+ - Build from source — Build and run MailFlow directly from the upstream source code.
+ - Native installation — Install MailFlow without Docker.
+
+For most users, pre-built Docker images provide the simplest installation experience. This fork also offers AIO images for those who prefer a single application container.
 
 ---
 
-## Option A — Pre-built images (recommended)
+## Option A — All-in-One (AIO) Docker images
+
+For a simplified deployment combining Nginx and Node.js in a single
+container, use the community-maintained AIO images available on
+GHCR and Docker Hub.
+
+See the [AIO Docker quick-start instructions](#all-in-one-aio-docker-images)
+for installation and configuration.
+
+## Option B — Official pre-built images
 
 No cloning or building required. Docker pulls the pre-built images directly from GHCR.
 
@@ -199,7 +254,7 @@ To pin to a specific version instead of `latest`, add `MAILFLOW_VERSION=4.0.4` t
 
 ---
 
-## Option B — Build from source
+## Option C — Build from source
 
 ### Prerequisites
 
@@ -258,7 +313,7 @@ Select a preset (Gmail, iCloud) or Custom for any IMAP server.
 
 ---
 
-## Option C — Native install (no Docker)
+## Option D — Native install (no Docker)
 
 Run MailFlow directly on any Linux, macOS, or BSD machine using Node.js, PostgreSQL, and Redis.
 No container runtime required. The steps below use Ubuntu/Debian; adapt package manager commands for other platforms.
@@ -550,6 +605,9 @@ docker compose logs -f
 # View backend logs only
 docker compose logs -f backend
 
+# AIO deployment logs
+docker compose logs -f aio
+
 # Stop
 docker compose down
 
@@ -596,6 +654,35 @@ cat mailflow-YYYYMMDD.sql | \
 ---
 
 ## Architecture
+
+### All-in-One (AIO) deployment
+
+```
+Browser (HTTPS / HTTP)
+        │
+        ▼
+┌───────────────────────────────────┐
+│           MailFlow AIO            │
+│                                   │
+│  Nginx (ports 80/443)             │
+│      │                            │
+│      ├── React SPA                │
+│      │                            │
+│      └── /api, /oauth, /ws        │
+│              │                    │
+│              ▼                    │
+│      Node.js (localhost:3000)     │
+└───────────────────────────────────┘
+                │
+        ┌───────┴───────┐
+        │               │
+        ▼               ▼
+    PostgreSQL        Redis
+```
+
+Nginx and Node.js communicate over localhost inside the AIO container. PostgreSQL and Redis remain separate services on the internal Docker network.
+
+The AIO image retains upstream backend migrations and application startup behavior. Database migrations run when the backend starts.
 
 ### Default deployment (self-signed HTTPS)
 
