@@ -41,7 +41,12 @@ test('opens print windows and continues routing external links to the browser', 
     isAllowedExternalUrl: (url) => /^https?:/.test(url),
     openExternal: (url) => opened.push(url),
   });
-  assert.deepEqual(contents.openWindow(printRequest), { action: 'allow' });
+  const printWindow = contents.openWindow(printRequest);
+  assert.equal(printWindow.action, 'allow');
+  assert.deepEqual(printWindow.overrideBrowserWindowOptions.webPreferences, {
+    preload: undefined, sandbox: true, contextIsolation: true, nodeIntegration: false,
+    nodeIntegrationInSubFrames: false, webviewTag: false,
+  });
   assert.deepEqual(contents.openWindow({ url: 'https://example.test' }), { action: 'deny' });
   assert.deepEqual(contents.openWindow({ url: 'file:///secret' }), { action: 'deny' });
   assert.deepEqual(contents.openWindow({ ...printRequest, frameName: '_blank' }), { action: 'deny' });

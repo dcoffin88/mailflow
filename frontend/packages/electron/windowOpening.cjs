@@ -15,7 +15,22 @@ function configureWindowOpening(webContents, { getHost, isAllowedExternalUrl, op
   };
 
   webContents.setWindowOpenHandler((details) => {
-    if (isPrintWindow(details, getHost(), webContents.getURL())) return { action: 'allow' };
+    if (isPrintWindow(details, getHost(), webContents.getURL())) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          webPreferences: {
+            // Explicitly clear the inherited main preload: email HTML gets no native bridge.
+            preload: undefined,
+            sandbox: true,
+            contextIsolation: true,
+            nodeIntegration: false,
+            nodeIntegrationInSubFrames: false,
+            webviewTag: false,
+          },
+        },
+      };
+    }
     openLink(details.url);
     return { action: 'deny' };
   });
