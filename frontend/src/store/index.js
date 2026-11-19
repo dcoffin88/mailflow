@@ -172,7 +172,7 @@ export const useStore = create((set, get) => ({
         // revision need not move.
         replyDrafts: {},
         composing: false, composeData: null, prepareComposeSwitch: null, messageWindows: [],
-        enabledPlugins: [], autoLockMinutes: 0, blockRemoteImages: true,
+        enabledPlugins: [], autoLockMinutes: 0, sessionDays: 0, blockRemoteImages: true,
         imageWhitelist: { addresses: [], domains: [] }, shortcuts: {}, aiActions: null,
         hiddenFolders: {}, categorizationEnabled: false, gtdPetSlug: null,
         autoOpenReplyDrafts: false, afterRemove: 'next', darkEmailBodies: true,
@@ -275,6 +275,21 @@ export const useStore = create((set, get) => ({
     const channel = new MessageChannel();
     channel.port1.onmessage = () => { channel.port1.close(); api.lock().catch(() => {}); };
     channel.port2.postMessage(null);
+  },
+  // How long a sign-in lasts without use (D#400): 0 follows the server default, which the
+  // server reports as sessionDaysDefault. Saved at once rather than batched with other
+  // preferences, so Settings can say whether it worked.
+  sessionDays: 0,
+  sessionDaysDefault: 7,
+  setSessionDays: async (days) => {
+    const previous = get().sessionDays;
+    set({ sessionDays: days });
+    try {
+      await api.savePreferences({ sessionDays: days });
+    } catch (err) {
+      set({ sessionDays: previous });
+      throw err;
+    }
   },
   autoLockMinutes: 0,
   setAutoLockMinutes: (m) => {
@@ -480,6 +495,9 @@ export const useStore = create((set, get) => ({
   }),
   // { undoable: true } marks a change the server only hears about once its undo window closes.
   adjustUnread: (accountId, delta, { undoable = false } = {}) => {
+    // No change opens no window: an empty one would still hold the badge at its old count, and
+    // keep an arrival off it, for PENDING_COUNT_MS (utils/inboxBadge.js charges 0 often).
+    if (!Number.isFinite(delta) || delta === 0) return;
     set(state => {
       if (state.isLocked) return {};
       const displayed = displayCountSnapshot(state.serverUnreadCounts, state.pendingCounts, state.accounts);
@@ -500,6 +518,11 @@ export const useStore = create((set, get) => ({
   setFolders: (accountId, folders) => set(state => state.isLocked ? {} : ({
     folders: { ...state.folders, [accountId]: mergeFolderSnapshots(state.folders[accountId], folders) }
   })),
+
+  // Where a resync after the app resumes stands (utils/resumeRefresh.js), for the list to say so:
+  // 'idle', 'syncing', 'failed' or 'retrying' (#748).
+  resumeSync: 'idle',
+  setResumeSync: (resumeSync) => set({ resumeSync }),
 
   // UI state
   sidebarCollapsed: localStorage.getItem('mailflow_sidebar_collapsed') === 'true',
@@ -754,6 +777,18 @@ export const useStore = create((set, get) => ({
     schedulePrefSave({ language: lng });
   },
 
+  // Time format (#758): 'auto' follows the language as before, '12' / '24' force a
+  // 12- or 24-hour clock wherever formatDate.js renders a time. Read by that helper
+  // straight from localStorage, so the list and reading pane pick it up on render.
+  timeFormat: ['auto', '12', '24'].includes(localStorage.getItem('mailflow_time_format'))
+    ? localStorage.getItem('mailflow_time_format') : 'auto',
+  setTimeFormat: (val) => {
+    const v = ['auto', '12', '24'].includes(val) ? val : 'auto';
+    localStorage.setItem('mailflow_time_format', v);
+    set({ timeFormat: v });
+    schedulePrefSave({ timeFormat: v });
+  },
+
   // How conversations are shown: 'off', 'list' (threads expand inline in the list) or
   // 'pane' (a selected row opens the whole conversation in the reading area).
   //
@@ -973,6 +1008,7 @@ export const useStore = create((set, get) => ({
   categoryTotals: {},
   setCategoryCounts: (counts, totals) => set(totals ? { categoryCounts: counts, categoryTotals: totals } : { categoryCounts: counts }),
   adjustCategoryCount: (category, delta) => set(state => {
+    if (!Number.isFinite(delta) || delta === 0) return {};
     const key = category || 'primary';
     const current = state.categoryCounts[key] || 0;
     return { categoryCounts: { ...state.categoryCounts, [key]: Math.max(0, current + delta) } };
@@ -1383,6 +1419,11 @@ export const useStore = create((set, get) => ({
       // blockRemoteImages: explicit false disables blocking; anything else keeps the default (true)
       if (prefs.blockRemoteImages === false) set({ blockRemoteImages: false });
       else if (prefs.blockRemoteImages === true) set({ blockRemoteImages: true });
+      if (prefs.sessionDays != null) {
+        const n = Number(prefs.sessionDays);
+        set({ sessionDays: [7, 14, 30, 60, 90].includes(n) ? n : 0 });
+      }
+      if (Number(prefs.sessionDaysDefault) > 0) set({ sessionDaysDefault: Number(prefs.sessionDaysDefault) });
       if (prefs.autoLockMinutes != null) {
         const n = Number(prefs.autoLockMinutes);
         set({ autoLockMinutes: [0, 1, 5, 15, 30].includes(n) ? n : 0 });
@@ -1430,6 +1471,10 @@ export const useStore = create((set, get) => ({
         localStorage.setItem('mailflow_language', prefs.language);
         set({ language: prefs.language });
         i18n.changeLanguage(prefs.language);
+      }
+      if (['auto', '12', '24'].includes(prefs.timeFormat)) {
+        localStorage.setItem('mailflow_time_format', prefs.timeFormat);
+        set({ timeFormat: prefs.timeFormat });
       }
       if (isConversationMode(prefs.conversationMode) || typeof prefs.threadedView === 'boolean') {
         const mode = resolveConversationMode(prefs);

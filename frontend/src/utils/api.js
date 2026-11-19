@@ -47,7 +47,8 @@ async function request(method, path, body, extraHeaders, { quiet = false } = {})
     // (and the server's clock, for a scheduled time it refused) which refusal it was.
     throw Object.assign(new Error(err.error || 'Request failed'), {
       status: res.status,
-      ...(typeof err.code === 'string' ? { code: err.code } : {}),
+      ...(typeof err.code === 'string' ? { code: err.code } :
+        path === '/webhooks/test' && typeof err.skipped === 'string' ? { code: err.skipped } : {}),
       ...(typeof err.serverNow === 'string' ? { serverNow: err.serverNow } : {}),
       // What a scheduled message is doing when the server refused to change it (sending, sent...).
       ...(typeof err.status === 'string' ? { state: err.status } : {}),
@@ -188,6 +189,14 @@ async function endPushSubscription() {
 }
 
 export const api = {
+  webhooks: {
+    get: () => request('GET', '/webhooks'),
+    save: data => request('PUT', '/webhooks', data),
+    test: () => request('POST', '/webhooks/test'),
+    remove: () => request('DELETE', '/webhooks'),
+    getAdmin: () => request('GET', '/webhooks/admin'),
+    saveAdmin: data => request('PUT', '/webhooks/admin', data),
+  },
   get: (path) => request('GET', path),
   post: (path, body, extraHeaders) => request('POST', path, body, extraHeaders),
   put: (path, body) => request('PUT', path, body),
@@ -673,6 +682,14 @@ export const api = {
   // INBOX copy from the shared Message-ID.
   gtdDone: (id, states) => request('POST', '/gtd/done', { id, states }),
   gtdEnsureFolders: (accountId, folders) => request('POST', '/gtd/folders/ensure', { accountId, folders }),
+
+  // Tags: definitions, and the tags on messages.
+  tagDefinitions: () => request('GET', '/tags/definitions'),
+  tagCreate: (body) => request('POST', '/tags/definitions', body),
+  tagUpdate: (id, patch) => request('PATCH', `/tags/definitions/${id}`, patch),
+  tagDelete: (id) => request('DELETE', `/tags/definitions/${id}`),
+  tagsForMessages: (ids) => request('GET', `/tags/messages?ids=${ids.join(',')}`),
+  tagSet: (messageId, tagId, applied) => request('PUT', `/tags/messages/${messageId}/tags/${tagId}`, { applied }),
 
   // GTD — Inbox-Zero pet. Import uploads your own pet (pet.json text + a base64 spritesheet)
   // and caches it server-side; meta returns the animation descriptor; the sheet URL is used
